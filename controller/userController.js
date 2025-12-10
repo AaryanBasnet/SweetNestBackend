@@ -1,43 +1,60 @@
 const asyncHandler = require('express-async-handler');
 const User = require('../model/User');
+const PasswordResetToken = require('../model/PasswordResetToken');
+const { sendPasswordResetEmail } = require('../config/email');
 const jwt = require('jsonwebtoken');
 
-// Generate JWT token
+// --- Helper: Generate JWT ---
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: '30d', // 30 days
+    expiresIn: '30d',
   });
 };
 
-// @desc    Register new user
+// --- 1. Register User ---
 // @route   POST /api/users/register
 // @access  Public
 const registerUser = asyncHandler(async (req, res) => {
   const { name, email, password, phone, address } = req.body;
 
+  // Validation
+  if (!name || !email || !password) {
+    res.status(400);
+    throw new Error('Please include all required fields (Name, Email, Password)');
+  }
+
   const normalizedEmail = email.trim().toLowerCase();
 
+  // Check if user exists
   const userExists = await User.findOne({ email: normalizedEmail });
   if (userExists) {
     res.status(400);
     throw new Error('User already exists');
   }
 
+  // Create User
   const user = await User.create({
     name,
     email: normalizedEmail,
-    password,
+    password, // *Make sure your User model hashes this in a pre-save hook*
     phone,
     address,
   });
 
   if (user) {
     res.status(201).json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
+      success: true,
+      message: "User registered successfully.",
       token: generateToken(user._id),
+      userData: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        phone: user.phone,
+        address: user.address,
+        avatar: user.avatar,
+      },
     });
   } else {
     res.status(400);
@@ -45,43 +62,62 @@ const registerUser = asyncHandler(async (req, res) => {
   }
 });
 
-// @desc    Login user
+// --- 2. Login User ---
 // @route   POST /api/users/login
 // @access  Public
 const loginUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
+  if (!email || !password) {
+    res.status(400);
+    throw new Error('Please provide both email and password');
+  }
+
   const user = await User.findOne({ email: email.trim().toLowerCase() });
 
+  // Check password (requires matchPassword method in User model)
   if (user && (await user.matchPassword(password))) {
-    res.json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
+    res.status(200).json({
+      success: true,
+      message: "User logged in successfully.",
       token: generateToken(user._id),
+      userData: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        phone: user.phone,
+        address: user.address,
+        avatar: user.avatar,
+      },
     });
   } else {
-    res.status(401);
+    res.status(401); // Unauthorized
     throw new Error('Invalid email or password');
   }
 });
 
-// @desc    Get user profile
+// --- 3. Get User Profile ---
 // @route   GET /api/users/profile
 // @access  Private
 const getUserProfile = asyncHandler(async (req, res) => {
+  // req.user comes from your auth middleware
   const user = await User.findById(req.user._id);
+
   if (user) {
-    res.json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      address: user.address,
-      avatar: user.avatar,
-      role: user.role,
-      isVerified: user.isVerified,
+    res.status(200).json({
+      success: true,
+      // No message needed for data fetch, but consistent structure helps
+      userData: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        address: user.address,
+        avatar: user.avatar,
+        role: user.role,
+        isVerified: user.isVerified,
+      },
     });
   } else {
     res.status(404);
@@ -89,41 +125,187 @@ const getUserProfile = asyncHandler(async (req, res) => {
   }
 });
 
-// @desc    Update user profile
+// --- 4. Update User Profile ---
 // @route   PUT /api/users/profile
 // @access  Private
 const updateUserProfile = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id);
 
   if (user) {
+    // Update basic fields
     user.name = req.body.name || user.name;
-    user.email = req.body.email ? req.body.email.trim().toLowerCase() : user.email;
     user.phone = req.body.phone || user.phone;
     user.address = req.body.address || user.address;
-    if (req.body.password) user.password = req.body.password; // hashed automatically
-    if (req.body.avatar) user.avatar = req.body.avatar;
+    user.avatar = req.body.avatar || user.avatar;
 
-    // Prevent users from changing their role
-    if (req.body.role && req.body.role !== user.role) {
-      res.status(403);
-      throw new Error('Cannot change role');
+    // Update Email (Normalize it)
+    if (req.body.email) {
+      user.email = req.body.email.trim().toLowerCase();
     }
 
+    // Update Password (Middleware will hash it)
+    if (req.body.password) {
+      user.password = req.body.password;
+    }
+
+    // SECURITY: We intentionally DO NOT update 'role' here.
+    // If req.body.role is sent, it is simply ignored.
+
     const updatedUser = await user.save();
-    res.json({
-      _id: updatedUser._id,
-      name: updatedUser.name,
-      email: updatedUser.email,
-      phone: updatedUser.phone,
-      address: updatedUser.address,
-      avatar: updatedUser.avatar,
-      role: updatedUser.role,
-      token: generateToken(updatedUser._id),
+
+    res.status(200).json({
+      success: true,
+      message: "Profile updated successfully.",
+      // Sending a new token is optional but good if you want to extend the session
+      token: generateToken(updatedUser._id), 
+      userData: {
+        id: updatedUser._id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        phone: updatedUser.phone,
+        address: updatedUser.address,
+        avatar: updatedUser.avatar,
+        role: updatedUser.role,
+      },
     });
   } else {
     res.status(404);
     throw new Error('User not found');
   }
+});
+
+// --- 5. Forgot Password (Send Reset Code) ---
+// @route   POST /api/users/forgot-password
+// @access  Public
+const forgotPassword = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    res.status(400);
+    throw new Error('Please provide an email address');
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const user = await User.findOne({ email: normalizedEmail });
+
+  if (!user) {
+    res.status(404);
+    throw new Error('No account found with this email');
+  }
+
+  // Delete any existing reset tokens for this user
+  await PasswordResetToken.deleteMany({ userId: user._id });
+
+  // Generate new reset code
+  const resetCode = PasswordResetToken.generateCode();
+
+  // Save reset token
+  await PasswordResetToken.create({
+    userId: user._id,
+    email: normalizedEmail,
+    code: resetCode,
+  });
+
+  // Send email
+  await sendPasswordResetEmail(normalizedEmail, resetCode);
+
+  res.status(200).json({
+    success: true,
+    message: 'Password reset code sent to your email',
+  });
+});
+
+// --- 6. Verify Reset Code ---
+// @route   POST /api/users/verify-reset-code
+// @access  Public
+const verifyResetCode = asyncHandler(async (req, res) => {
+  const { email, code } = req.body;
+
+  if (!email || !code) {
+    res.status(400);
+    throw new Error('Please provide email and verification code');
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const resetToken = await PasswordResetToken.findOne({
+    email: normalizedEmail,
+    code: code,
+  });
+
+  if (!resetToken) {
+    res.status(400);
+    throw new Error('Invalid verification code');
+  }
+
+  // Check if code has expired
+  if (resetToken.expiresAt < new Date()) {
+    await PasswordResetToken.deleteOne({ _id: resetToken._id });
+    res.status(400);
+    throw new Error('Verification code has expired. Please request a new one');
+  }
+
+  // Mark as verified
+  resetToken.verified = true;
+  await resetToken.save();
+
+  res.status(200).json({
+    success: true,
+    message: 'Code verified successfully',
+  });
+});
+
+// --- 7. Reset Password ---
+// @route   POST /api/users/reset-password
+// @access  Public
+const resetPassword = asyncHandler(async (req, res) => {
+  const { email, code, newPassword } = req.body;
+
+  if (!email || !code || !newPassword) {
+    res.status(400);
+    throw new Error('Please provide email, code, and new password');
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  // Find verified reset token
+  const resetToken = await PasswordResetToken.findOne({
+    email: normalizedEmail,
+    code: code,
+    verified: true,
+  });
+
+  if (!resetToken) {
+    res.status(400);
+    throw new Error('Invalid or unverified reset code. Please verify your code first');
+  }
+
+  // Check if code has expired
+  if (resetToken.expiresAt < new Date()) {
+    await PasswordResetToken.deleteOne({ _id: resetToken._id });
+    res.status(400);
+    throw new Error('Reset code has expired. Please request a new one');
+  }
+
+  // Find user and update password
+  const user = await User.findById(resetToken.userId);
+
+  if (!user) {
+    res.status(404);
+    throw new Error('User not found');
+  }
+
+  // Update password (will be hashed by pre-save hook)
+  user.password = newPassword;
+  await user.save();
+
+  // Delete the reset token
+  await PasswordResetToken.deleteOne({ _id: resetToken._id });
+
+  res.status(200).json({
+    success: true,
+    message: 'Password reset successfully. You can now login with your new password',
+  });
 });
 
 module.exports = {
@@ -131,4 +313,7 @@ module.exports = {
   loginUser,
   getUserProfile,
   updateUserProfile,
+  forgotPassword,
+  verifyResetCode,
+  resetPassword,
 };
