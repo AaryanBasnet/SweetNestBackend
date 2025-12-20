@@ -3,9 +3,12 @@ const express = require("express");
 const cors = require("cors");
 dotenv.config();
 
-const userRoutes = require('./routes/userRoutes')
+const userRoutes = require("./routes/userRoutes");
+const categoryRoutes = require("./routes/categoryRoutes");
+const cakeRoutes = require("./routes/cakeRoutes");
+const reviewRoutes = require("./routes/reviewRoutes");
 
-const { errorHandler, notFound } = require('./middleware/errorMiddleware');
+const { errorHandler, notFound } = require("./middleware/errorMiddleware");
 
 dotenv.config();
 
@@ -23,7 +26,10 @@ app.get("/", (req, res) => {
 });
 
 //Routes
-app.use('/api/users', userRoutes)
+app.use("/api/users", userRoutes);
+app.use("/api/categories", categoryRoutes);
+app.use("/api/cakes", cakeRoutes);
+app.use("/api/reviews", reviewRoutes);
 
 //  error handlers
 
