@@ -1,3 +1,9 @@
+/**
+ * User Controller
+ * Authentication and user management operations
+ * Validation is handled by Zod middleware in routes
+ */
+
 const asyncHandler = require('express-async-handler');
 const User = require('../model/User');
 const PasswordResetToken = require('../model/PasswordResetToken');
@@ -11,40 +17,37 @@ const generateToken = (id) => {
   });
 };
 
-// --- 1. Register User ---
+// @desc    Register User
 // @route   POST /api/users/register
 // @access  Public
 const registerUser = asyncHandler(async (req, res) => {
-  const { name, email, password, phone, address } = req.body;
-
-  // Validation
-  if (!name || !email || !password) {
-    res.status(400);
-    throw new Error('Please include all required fields (Name, Email, Password)');
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
+  const { name, email, password, phone, address, role } = req.body;
 
   // Check if user exists
-  const userExists = await User.findOne({ email: normalizedEmail });
+  const userExists = await User.findOne({ email });
   if (userExists) {
     res.status(400);
     throw new Error('User already exists');
   }
 
+  // Validate role (only allow 'user' or 'admin')
+  const validRoles = ['user', 'admin'];
+  const userRole = role && validRoles.includes(role) ? role : 'user';
+
   // Create User
   const user = await User.create({
     name,
-    email: normalizedEmail,
-    password, // *Make sure your User model hashes this in a pre-save hook*
+    email,
+    password,
     phone,
     address,
+    role: userRole,
   });
 
   if (user) {
     res.status(201).json({
       success: true,
-      message: "User registered successfully.",
+      message: 'User registered successfully.',
       token: generateToken(user._id),
       userData: {
         id: user._id,
@@ -62,24 +65,18 @@ const registerUser = asyncHandler(async (req, res) => {
   }
 });
 
-// --- 2. Login User ---
+// @desc    Login User
 // @route   POST /api/users/login
 // @access  Public
 const loginUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  if (!email || !password) {
-    res.status(400);
-    throw new Error('Please provide both email and password');
-  }
+  const user = await User.findOne({ email });
 
-  const user = await User.findOne({ email: email.trim().toLowerCase() });
-
-  // Check password (requires matchPassword method in User model)
   if (user && (await user.matchPassword(password))) {
     res.status(200).json({
       success: true,
-      message: "User logged in successfully.",
+      message: 'User logged in successfully.',
       token: generateToken(user._id),
       userData: {
         id: user._id,
@@ -92,22 +89,20 @@ const loginUser = asyncHandler(async (req, res) => {
       },
     });
   } else {
-    res.status(401); // Unauthorized
+    res.status(401);
     throw new Error('Invalid email or password');
   }
 });
 
-// --- 3. Get User Profile ---
+// @desc    Get User Profile
 // @route   GET /api/users/profile
 // @access  Private
 const getUserProfile = asyncHandler(async (req, res) => {
-  // req.user comes from your auth middleware
   const user = await User.findById(req.user._id);
 
   if (user) {
     res.status(200).json({
       success: true,
-      // No message needed for data fetch, but consistent structure helps
       userData: {
         id: user._id,
         name: user.name,
@@ -125,39 +120,29 @@ const getUserProfile = asyncHandler(async (req, res) => {
   }
 });
 
-// --- 4. Update User Profile ---
+// @desc    Update User Profile
 // @route   PUT /api/users/profile
 // @access  Private
 const updateUserProfile = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id);
 
   if (user) {
-    // Update basic fields
-    user.name = req.body.name || user.name;
-    user.phone = req.body.phone || user.phone;
-    user.address = req.body.address || user.address;
-    user.avatar = req.body.avatar || user.avatar;
+    // Update fields from validated body
+    if (req.body.name) user.name = req.body.name;
+    if (req.body.email) user.email = req.body.email;
+    if (req.body.phone !== undefined) user.phone = req.body.phone;
+    if (req.body.address !== undefined) user.address = req.body.address;
+    if (req.body.avatar) user.avatar = req.body.avatar;
+    if (req.body.password) user.password = req.body.password;
 
-    // Update Email (Normalize it)
-    if (req.body.email) {
-      user.email = req.body.email.trim().toLowerCase();
-    }
-
-    // Update Password (Middleware will hash it)
-    if (req.body.password) {
-      user.password = req.body.password;
-    }
-
-    // SECURITY: We intentionally DO NOT update 'role' here.
-    // If req.body.role is sent, it is simply ignored.
+    // SECURITY: Role is NOT updated from request body
 
     const updatedUser = await user.save();
 
     res.status(200).json({
       success: true,
-      message: "Profile updated successfully.",
-      // Sending a new token is optional but good if you want to extend the session
-      token: generateToken(updatedUser._id), 
+      message: 'Profile updated successfully.',
+      token: generateToken(updatedUser._id),
       userData: {
         id: updatedUser._id,
         name: updatedUser.name,
@@ -174,19 +159,13 @@ const updateUserProfile = asyncHandler(async (req, res) => {
   }
 });
 
-// --- 5. Forgot Password (Send Reset Code) ---
+// @desc    Forgot Password (Send Reset Code)
 // @route   POST /api/users/forgot-password
 // @access  Public
 const forgotPassword = asyncHandler(async (req, res) => {
   const { email } = req.body;
 
-  if (!email) {
-    res.status(400);
-    throw new Error('Please provide an email address');
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-  const user = await User.findOne({ email: normalizedEmail });
+  const user = await User.findOne({ email });
 
   if (!user) {
     res.status(404);
@@ -202,12 +181,12 @@ const forgotPassword = asyncHandler(async (req, res) => {
   // Save reset token
   await PasswordResetToken.create({
     userId: user._id,
-    email: normalizedEmail,
+    email,
     code: resetCode,
   });
 
   // Send email
-  await sendPasswordResetEmail(normalizedEmail, resetCode);
+  await sendPasswordResetEmail(email, resetCode);
 
   res.status(200).json({
     success: true,
@@ -215,23 +194,13 @@ const forgotPassword = asyncHandler(async (req, res) => {
   });
 });
 
-// --- 6. Verify Reset Code ---
+// @desc    Verify Reset Code
 // @route   POST /api/users/verify-reset-code
 // @access  Public
 const verifyResetCode = asyncHandler(async (req, res) => {
   const { email, code } = req.body;
 
-  if (!email || !code) {
-    res.status(400);
-    throw new Error('Please provide email and verification code');
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-
-  const resetToken = await PasswordResetToken.findOne({
-    email: normalizedEmail,
-    code: code,
-  });
+  const resetToken = await PasswordResetToken.findOne({ email, code });
 
   if (!resetToken) {
     res.status(400);
@@ -255,23 +224,16 @@ const verifyResetCode = asyncHandler(async (req, res) => {
   });
 });
 
-// --- 7. Reset Password ---
+// @desc    Reset Password
 // @route   POST /api/users/reset-password
 // @access  Public
 const resetPassword = asyncHandler(async (req, res) => {
   const { email, code, newPassword } = req.body;
 
-  if (!email || !code || !newPassword) {
-    res.status(400);
-    throw new Error('Please provide email, code, and new password');
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-
   // Find verified reset token
   const resetToken = await PasswordResetToken.findOne({
-    email: normalizedEmail,
-    code: code,
+    email,
+    code,
     verified: true,
   });
 

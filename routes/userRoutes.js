@@ -1,6 +1,11 @@
-// routes/userRoutes.js
+/**
+ * User Routes
+ * API endpoints for authentication and user management
+ */
+
 const express = require('express');
 const router = express.Router();
+
 const {
   registerUser,
   loginUser,
@@ -10,21 +15,31 @@ const {
   verifyResetCode,
   resetPassword,
 } = require('../controller/userController');
+
 const { protect } = require('../middleware/authMiddleware');
+const { validate } = require('../middleware/validateMiddleware');
+const {
+  registerSchema,
+  loginSchema,
+  updateProfileSchema,
+  forgotPasswordSchema,
+  verifyResetCodeSchema,
+  resetPasswordSchema,
+} = require('../validators/userValidators');
 
 // Public routes
-router.post('/register', registerUser);
-router.post('/login', loginUser);
+router.post('/register', validate(registerSchema), registerUser);
+router.post('/login', validate(loginSchema), loginUser);
 
 // Password reset routes (Public)
-router.post('/forgot-password', forgotPassword);
-router.post('/verify-reset-code', verifyResetCode);
-router.post('/reset-password', resetPassword);
+router.post('/forgot-password', validate(forgotPasswordSchema), forgotPassword);
+router.post('/verify-reset-code', validate(verifyResetCodeSchema), verifyResetCode);
+router.post('/reset-password', validate(resetPasswordSchema), resetPassword);
 
 // Protected routes (requires JWT)
 router
   .route('/profile')
   .get(protect, getUserProfile)
-  .put(protect, updateUserProfile);
+  .put(protect, validate(updateProfileSchema), updateUserProfile);
 
 module.exports = router;
