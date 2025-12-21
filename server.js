@@ -1,16 +1,15 @@
 const dotenv = require("dotenv");
+dotenv.config();
+
 const express = require("express");
 const cors = require("cors");
-dotenv.config();
 
-const userRoutes = require("./routes/userRoutes");
-const categoryRoutes = require("./routes/categoryRoutes");
-const cakeRoutes = require("./routes/cakeRoutes");
-const reviewRoutes = require("./routes/reviewRoutes");
+const userRoutes = require('./routes/userRoutes');
+const categoryRoutes = require('./routes/categoryRoutes');
+const cakeRoutes = require('./routes/cakeRoutes');
+const reviewRoutes = require('./routes/reviewRoutes');
 
-const { errorHandler, notFound } = require("./middleware/errorMiddleware");
-
-dotenv.config();
+const { errorHandler, notFound } = require('./middleware/errorMiddleware');
 
 const connectDB = require("./config/db");
 
@@ -25,11 +24,11 @@ app.get("/", (req, res) => {
   res.send("API Running...");
 });
 
-//Routes
-app.use("/api/users", userRoutes);
-app.use("/api/categories", categoryRoutes);
-app.use("/api/cakes", cakeRoutes);
-app.use("/api/reviews", reviewRoutes);
+// Routes
+app.use('/api/users', userRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/cakes', cakeRoutes);
+app.use('/api/reviews', reviewRoutes);
 
 //  error handlers
 

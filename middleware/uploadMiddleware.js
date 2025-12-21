@@ -21,8 +21,8 @@ const imageFileFilter = (req, file, cb) => {
   }
 };
 
-// Multer upload instances
-const uploadCakeImages = multer({
+// Base multer instances
+const multerCakeImages = multer({
   storage,
   fileFilter: imageFileFilter,
   limits: {
@@ -31,7 +31,7 @@ const uploadCakeImages = multer({
   },
 });
 
-const uploadCategoryImage = multer({
+const multerCategoryImage = multer({
   storage,
   fileFilter: imageFileFilter,
   limits: {
@@ -40,8 +40,8 @@ const uploadCategoryImage = multer({
   },
 });
 
-// Error handling middleware for multer
-const handleUploadError = (err, req, res, next) => {
+// Helper to handle multer errors
+const handleMulterError = (err, res) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
       return res.status(400).json({
@@ -61,13 +61,52 @@ const handleUploadError = (err, req, res, next) => {
     });
   }
 
-  if (err) {
-    return res.status(400).json({
-      success: false,
-      message: err.message || 'Error uploading file',
-    });
-  }
+  return res.status(400).json({
+    success: false,
+    message: err.message || 'Error uploading file',
+  });
+};
 
+// Wrapped upload middleware for category (single image)
+const uploadCategoryImage = {
+  single: (fieldName) => {
+    return (req, res, next) => {
+      multerCategoryImage.single(fieldName)(req, res, (err) => {
+        if (err) {
+          return handleMulterError(err, res);
+        }
+        next();
+      });
+    };
+  },
+};
+
+// Wrapped upload middleware for cakes (multiple images)
+const uploadCakeImages = {
+  array: (fieldName, maxCount) => {
+    return (req, res, next) => {
+      multerCakeImages.array(fieldName, maxCount)(req, res, (err) => {
+        if (err) {
+          return handleMulterError(err, res);
+        }
+        next();
+      });
+    };
+  },
+  single: (fieldName) => {
+    return (req, res, next) => {
+      multerCakeImages.single(fieldName)(req, res, (err) => {
+        if (err) {
+          return handleMulterError(err, res);
+        }
+        next();
+      });
+    };
+  },
+};
+
+// No-op middleware for backward compatibility (error handling is now built-in)
+const handleUploadError = (req, res, next) => {
   next();
 };
 
