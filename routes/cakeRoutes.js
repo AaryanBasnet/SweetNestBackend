@@ -3,7 +3,7 @@
  * API endpoints for cakes
  */
 
-const express = require("express");
+const express = require('express');
 const router = express.Router();
 
 const {
@@ -15,19 +15,13 @@ const {
   deleteCake,
   getFeaturedCakes,
   getCakesByCategory,
-} = require("../controller/cakeController");
+} = require('../controller/cakeController');
 
-const {
-  getCakeReviews,
-  createReview,
-} = require("../controller/reviewController");
+const { getCakeReviews, createReview } = require('../controller/reviewController');
 
-const { protect, admin } = require("../middleware/authMiddleware");
-const {
-  uploadCakeImages,
-  handleUploadError,
-} = require("../middleware/uploadMiddleware");
-const { validate, validateBody } = require("../middleware/validateMiddleware");
+const { protect, admin } = require('../middleware/authMiddleware');
+const { uploadCakeImages, handleUploadError } = require('../middleware/uploadMiddleware');
+const { validate } = require('../middleware/validateMiddleware');
 const {
   createCakeSchema,
   updateCakeSchema,
@@ -35,53 +29,41 @@ const {
   getCakeByIdSchema,
   deleteCakeSchema,
   getCakesByCategorySchema,
-} = require("../validators/cakeValidators");
-const {
-  getCakeReviewsSchema,
-  createReviewSchema,
-} = require("../validators/reviewValidators");
+} = require('../validators/cakeValidators');
+const { getCakeReviewsSchema, createReviewSchema } = require('../validators/reviewValidators');
 
 // Public routes
-router.get("/", getCakes);
-router.get("/featured", getFeaturedCakes);
-router.get(
-  "/category/:categorySlug",
-  validate(getCakesByCategorySchema),
-  getCakesByCategory
-);
-router.get("/id/:id", validate(getCakeByIdSchema), getCakeById);
-router.get("/:slug", validate(getCakeBySlugSchema), getCakeBySlug);
+router.get('/', getCakes);
+router.get('/featured', getFeaturedCakes);
+router.get('/category/:categorySlug', validate(getCakesByCategorySchema), getCakesByCategory);
+router.get('/id/:id', validate(getCakeByIdSchema), getCakeById);
+router.get('/:slug', validate(getCakeBySlugSchema), getCakeBySlug);
 
 // Review routes (nested under cakes)
-router.get("/:cakeId/reviews", validate(getCakeReviewsSchema), getCakeReviews);
-router.post(
-  "/:cakeId/reviews",
-  protect,
-  validate(createReviewSchema),
-  createReview
-);
+router.get('/:cakeId/reviews', validate(getCakeReviewsSchema), getCakeReviews);
+router.post('/:cakeId/reviews', protect, validate(createReviewSchema), createReview);
 
 // Admin routes
 router.post(
-  "/",
+  '/',
   protect,
   admin,
-  uploadCakeImages.array("images", 5),
+  uploadCakeImages.array('images', 5),
   handleUploadError,
-  validateBody(createCakeSchema),
+  validate(createCakeSchema),
   createCake
 );
 
 router.put(
-  "/:id",
+  '/:id',
   protect,
   admin,
-  uploadCakeImages.array("images", 5),
+  uploadCakeImages.array('images', 5),
   handleUploadError,
-  validateBody(updateCakeSchema),
+  validate(updateCakeSchema),
   updateCake
 );
 
-router.delete("/:id", protect, admin, validate(deleteCakeSchema), deleteCake);
+router.delete('/:id', protect, admin, validate(deleteCakeSchema), deleteCake);
 
 module.exports = router;

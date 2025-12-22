@@ -1,22 +1,32 @@
 /**
  * Cake Model
- * References Category by ObjectId only (loose coupling)
- * Based on UI: Tiramisu Royal Layer product page
+ * Represents a configurable, made-to-order service with predefined price slabs
+ * NOT a warehouse inventory item
  */
 
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 
-// Sub-schema for weight options (1 POUND @ Rs.550, 2 POUND @ Rs.650)
+// Generate short unique ID (replacement for nanoid in CommonJS)
+const generateId = (length = 6) => crypto.randomBytes(length).toString('hex').slice(0, length);
+
+// Sub-schema for weight options with explicit pricing per weight
 const weightOptionSchema = new mongoose.Schema(
   {
-    weight: {
+    weightInKg: {
+      type: Number,
+      required: [true, 'Weight value is required'],
+      min: [0.1, 'Weight must be at least 0.1 kg'],
+    },
+    label: {
       type: String,
-      required: true,
+      required: [true, 'Weight label is required'],
       trim: true,
+      // e.g., "1 Pound", "500g", "2 kg"
     },
     price: {
       type: Number,
-      required: true,
+      required: [true, 'Price is required'],
       min: [0, 'Price cannot be negative'],
     },
     isDefault: {
@@ -42,6 +52,23 @@ const imageSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// Sub-schema for customization option choices
+const customizationChoiceSchema = new mongoose.Schema(
+  {
+    label: {
+      type: String,
+      required: [true, 'Choice label is required'],
+      trim: true,
+    },
+    extraPrice: {
+      type: Number,
+      default: 0,
+      min: [0, 'Extra price cannot be negative'],
+    },
+  },
+  { _id: false }
+);
+
 // Sub-schema for customization options
 const customizationOptionSchema = new mongoose.Schema(
   {
@@ -52,13 +79,12 @@ const customizationOptionSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['color', 'topping', 'message', 'flavor'],
+      enum: ['color', 'topping', 'message', 'flavor', 'decoration', 'size'],
       required: true,
     },
-    options: [String],
-    extraPrice: {
-      type: Number,
-      default: 0,
+    options: {
+      type: [customizationChoiceSchema],
+      default: [],
     },
   },
   { _id: false }
@@ -78,6 +104,7 @@ const cakeSchema = new mongoose.Schema(
       unique: true,
       lowercase: true,
       index: true,
+      immutable: true, // Cannot be changed after creation
     },
     description: {
       type: String,
@@ -105,22 +132,25 @@ const cakeSchema = new mongoose.Schema(
       },
     },
 
-    // Weight-based pricing
+    // Weight-based pricing (non-linear, explicit per option)
     weightOptions: {
       type: [weightOptionSchema],
-      validate: {
-        validator: function (v) {
-          return v && v.length > 0;
+      validate: [
+        {
+          validator: function (v) {
+            return v && v.length > 0;
+          },
+          message: 'At least one weight option is required',
         },
-        message: 'At least one weight option is required',
-      },
-    },
-
-    // Base price (minimum price - smallest weight option)
-    basePrice: {
-      type: Number,
-      required: true,
-      min: [0, 'Price cannot be negative'],
+        {
+          validator: function (v) {
+            // Ensure only one default (or none, which we'll fix in pre-save)
+            const defaults = v.filter((opt) => opt.isDefault);
+            return defaults.length <= 1;
+          },
+          message: 'Only one weight option can be set as default',
+        },
+      ],
     },
 
     // Product details (expandable sections in UI)
@@ -151,6 +181,14 @@ const cakeSchema = new mongoose.Schema(
       default: [],
     },
 
+    // Flavor tags for filtering (Chocolate, Vanilla, etc.)
+    flavorTags: {
+      type: [String],
+      enum: ['Chocolate', 'Vanilla', 'Fruit', 'Nut', 'Spiced', 'Coffee', 'Caramel', 'Citrus', 'Berry', 'Tropical'],
+      default: [],
+      index: true,
+    },
+
     // Customization
     isCustomizable: {
       type: Boolean,
@@ -174,13 +212,6 @@ const cakeSchema = new mongoose.Schema(
       default: 0,
     },
 
-    // Inventory
-    stock: {
-      type: Number,
-      default: 0,
-      min: [0, 'Stock cannot be negative'],
-    },
-
     // Status
     isActive: {
       type: Boolean,
@@ -199,36 +230,99 @@ const cakeSchema = new mongoose.Schema(
   }
 );
 
-// Virtual: Check if in stock
-cakeSchema.virtual('inStock').get(function () {
-  return this.stock > 0;
+// Virtual: basePrice - derived from minimum weight option price
+cakeSchema.virtual('basePrice').get(function () {
+  if (!this.weightOptions || this.weightOptions.length === 0) {
+    return 0;
+  }
+  return Math.min(...this.weightOptions.map((opt) => opt.price));
 });
 
-// Pre-save: Generate slug and set base price
-cakeSchema.pre('save', function (next) {
-  // Generate slug from name
-  if (this.isModified('name') || !this.slug) {
-    const timestamp = Date.now().toString(36).slice(-4);
-    this.slug = this.name
+// Virtual: defaultWeightOption - returns the default weight option
+cakeSchema.virtual('defaultWeightOption').get(function () {
+  if (!this.weightOptions || this.weightOptions.length === 0) {
+    return null;
+  }
+  return this.weightOptions.find((opt) => opt.isDefault) || this.weightOptions[0];
+});
+
+// Pre-save: Generate immutable slug and ensure single default weight option
+// Note: Mongoose 9 uses promises, not callbacks - no 'next' parameter
+cakeSchema.pre('save', function () {
+  // Generate slug ONLY if it doesn't exist (immutable after creation)
+  if (!this.slug) {
+    const baseSlug = this.name
       .toLowerCase()
       .trim()
       .replace(/\s+/g, '-')
       .replace(/[^\w\-]+/g, '')
-      .replace(/\-\-+/g, '-')
-      + '-' + timestamp;
+      .replace(/\-\-+/g, '-');
+    // Add short unique suffix to prevent collisions
+    const uniqueSuffix = generateId(6);
+    this.slug = `${baseSlug}-${uniqueSuffix}`;
   }
 
-  // Set base price to minimum weight option price
-  if (this.isModified('weightOptions') && this.weightOptions.length > 0) {
-    this.basePrice = Math.min(...this.weightOptions.map((opt) => opt.price));
+  // Ensure exactly one default weight option
+  if (this.weightOptions && this.weightOptions.length > 0) {
+    const defaults = this.weightOptions.filter((opt) => opt.isDefault);
+
+    if (defaults.length === 0) {
+      // No default set - make first option the default
+      this.weightOptions[0].isDefault = true;
+    } else if (defaults.length > 1) {
+      // Multiple defaults - keep only the first one
+      let foundFirst = false;
+      this.weightOptions.forEach((opt) => {
+        if (opt.isDefault) {
+          if (foundFirst) {
+            opt.isDefault = false;
+          } else {
+            foundFirst = true;
+          }
+        }
+      });
+    }
+  }
+  // No next() needed in Mongoose 9
+});
+
+// Pre-findOneAndUpdate: Ensure slug is not modified and handle default weight option
+// Note: Mongoose 9 uses promises, not callbacks
+cakeSchema.pre('findOneAndUpdate', function () {
+  const update = this.getUpdate();
+
+  // Prevent slug modification
+  if (update.slug || update.$set?.slug) {
+    delete update.slug;
+    if (update.$set) delete update.$set.slug;
   }
 
-  next();
+  // Handle weightOptions default logic in updates
+  const weightOptions = update.weightOptions || update.$set?.weightOptions;
+  if (weightOptions && weightOptions.length > 0) {
+    const defaults = weightOptions.filter((opt) => opt.isDefault);
+
+    if (defaults.length === 0) {
+      weightOptions[0].isDefault = true;
+    } else if (defaults.length > 1) {
+      let foundFirst = false;
+      weightOptions.forEach((opt) => {
+        if (opt.isDefault) {
+          if (foundFirst) {
+            opt.isDefault = false;
+          } else {
+            foundFirst = true;
+          }
+        }
+      });
+    }
+  }
+  // No next() needed in Mongoose 9
 });
 
 // Indexes for common queries
 cakeSchema.index({ category: 1, isActive: 1 });
-cakeSchema.index({ basePrice: 1 });
+cakeSchema.index({ 'weightOptions.price': 1 });
 cakeSchema.index({ ratingsAverage: -1 });
 cakeSchema.index({ createdAt: -1 });
 cakeSchema.index({ badges: 1 });

@@ -5,16 +5,18 @@
  */
 
 const asyncHandler = require('express-async-handler');
+const mongoose = require('mongoose');
 const Cake = require('../model/Cake');
 const { deleteImage, deleteMultipleImages } = require('../config/cloudinary');
 const { processAndUploadFiles } = require('../middleware/uploadMiddleware');
 const { getPaginationOptions, buildPaginationMeta, getSortOptions } = require('../utils/pagination');
+const { getFlavorTags } = require('../utils/flavorDetector');
 
 // @desc    Get all cakes with filtering, sorting, pagination
 // @route   GET /api/cakes
 // @access  Public
 const getCakes = asyncHandler(async (req, res) => {
-  const { category, badge, minPrice, maxPrice, search, featured, active, sort } = req.query;
+  const { category, badge, flavorTags, minPrice, maxPrice, search, featured, active, sort } = req.query;
   const { page, limit, skip } = getPaginationOptions(req.query);
 
   // Build filter object
@@ -28,9 +30,27 @@ const getCakes = asyncHandler(async (req, res) => {
     filter.isActive = true;
   }
 
-  if (category) filter.category = category;
+  // Handle category - can be ObjectId or slug
+  if (category) {
+    if (mongoose.Types.ObjectId.isValid(category)) {
+      filter.category = category;
+    } else {
+      // It's a slug, look up the category first
+      const Category = require('../model/Category');
+      const categoryDoc = await Category.findOne({ slug: category });
+      if (categoryDoc) {
+        filter.category = categoryDoc._id;
+      }
+    }
+  }
   if (badge) filter.badges = badge;
   if (featured === 'true') filter.isFeatured = true;
+
+  // Filter by flavor tags (supports comma-separated values)
+  if (flavorTags) {
+    const tagsArray = flavorTags.split(',').map(tag => tag.trim());
+    filter.flavorTags = { $in: tagsArray };
+  }
 
   if (minPrice || maxPrice) {
     filter['weightOptions.price'] = {};
@@ -128,6 +148,7 @@ const createCake = asyncHandler(async (req, res) => {
     storageAndCare,
     deliveryInfo,
     badges,
+    flavorTags,
     isCustomizable,
     customizationOptions,
     isActive,
@@ -142,6 +163,12 @@ const createCake = asyncHandler(async (req, res) => {
 
   const images = await processAndUploadFiles(req.files, 'sweetnest/cakes');
 
+  // Auto-detect flavor tags from name, description, ingredients
+  const detectedFlavorTags = getFlavorTags(
+    { name, description, ingredients: ingredients || [] },
+    flavorTags || [] // Also include any manually provided tags
+  );
+
   // Build cake data (Zod already validated and transformed the data)
   const cakeData = {
     name,
@@ -153,6 +180,7 @@ const createCake = asyncHandler(async (req, res) => {
     storageAndCare,
     deliveryInfo: deliveryInfo || { nextDayAvailable: true },
     badges: badges || [],
+    flavorTags: detectedFlavorTags,
     isCustomizable: isCustomizable || false,
     customizationOptions: customizationOptions || [],
     isActive: isActive !== false,
@@ -189,6 +217,7 @@ const updateCake = asyncHandler(async (req, res) => {
     storageAndCare,
     deliveryInfo,
     badges,
+    flavorTags,
     isCustomizable,
     customizationOptions,
     isActive,
@@ -209,6 +238,21 @@ const updateCake = asyncHandler(async (req, res) => {
   if (badges) cake.badges = badges;
   if (deliveryInfo) cake.deliveryInfo = deliveryInfo;
   if (customizationOptions) cake.customizationOptions = customizationOptions;
+
+  // Auto-detect flavor tags if name, description, or ingredients changed
+  if (name || description || ingredients) {
+    cake.flavorTags = getFlavorTags(
+      {
+        name: cake.name,
+        description: cake.description,
+        ingredients: cake.ingredients || [],
+      },
+      flavorTags || [] // Include any manually provided tags
+    );
+  } else if (flavorTags) {
+    // Only manual tags provided, no auto-detect fields changed
+    cake.flavorTags = flavorTags;
+  }
 
   // Handle image removal
   if (removeImages && removeImages.length > 0) {
