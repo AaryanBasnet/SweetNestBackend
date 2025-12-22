@@ -8,6 +8,7 @@ const router = express.Router();
 
 const {
   registerUser,
+  createAdmin,
   loginUser,
   getUserProfile,
   updateUserProfile,
@@ -16,7 +17,7 @@ const {
   resetPassword,
 } = require('../controller/userController');
 
-const { protect } = require('../middleware/authMiddleware');
+const { protect, admin } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validateMiddleware');
 const {
   registerSchema,
@@ -41,5 +42,8 @@ router
   .route('/profile')
   .get(protect, getUserProfile)
   .put(protect, validate(updateProfileSchema), updateUserProfile);
+
+// Admin-only routes (requires JWT + admin role)
+router.post('/admin', protect, admin, validate(registerSchema), createAdmin);
 
 module.exports = router;

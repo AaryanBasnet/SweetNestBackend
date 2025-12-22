@@ -17,11 +17,11 @@ const generateToken = (id) => {
   });
 };
 
-// @desc    Register User
+// @desc    Register User (Public registration - always creates 'user' role)
 // @route   POST /api/users/register
 // @access  Public
 const registerUser = asyncHandler(async (req, res) => {
-  const { name, email, password, phone, address, role } = req.body;
+  const { name, email, password, phone, address } = req.body;
 
   // Check if user exists
   const userExists = await User.findOne({ email });
@@ -30,18 +30,15 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new Error('User already exists');
   }
 
-  // Validate role (only allow 'user' or 'admin')
-  const validRoles = ['user', 'admin'];
-  const userRole = role && validRoles.includes(role) ? role : 'user';
-
-  // Create User
+  // SECURITY: Public registration always creates 'user' role
+  // Admin accounts can only be created by existing admins via /api/users/admin
   const user = await User.create({
     name,
     email,
     password,
     phone,
     address,
-    role: userRole,
+    role: 'user',
   });
 
   if (user) {
@@ -62,6 +59,48 @@ const registerUser = asyncHandler(async (req, res) => {
   } else {
     res.status(400);
     throw new Error('Invalid user data');
+  }
+});
+
+// @desc    Create Admin User (Only existing admins can create new admins)
+// @route   POST /api/users/admin
+// @access  Private/Admin
+const createAdmin = asyncHandler(async (req, res) => {
+  const { name, email, password, phone, address } = req.body;
+
+  // Check if user exists
+  const userExists = await User.findOne({ email });
+  if (userExists) {
+    res.status(400);
+    throw new Error('User with this email already exists');
+  }
+
+  // Create admin user
+  const admin = await User.create({
+    name,
+    email,
+    password,
+    phone,
+    address,
+    role: 'admin',
+  });
+
+  if (admin) {
+    res.status(201).json({
+      success: true,
+      message: 'Admin created successfully.',
+      userData: {
+        id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        role: admin.role,
+        phone: admin.phone,
+        address: admin.address,
+      },
+    });
+  } else {
+    res.status(400);
+    throw new Error('Invalid admin data');
   }
 });
 
@@ -137,7 +176,7 @@ const updateUserProfile = asyncHandler(async (req, res) => {
 
     // SECURITY: Role is NOT updated from request body
 
-    const updatedUser = await user.save();
+    const updatedUser = await user.save({ validateModifiedOnly: true });
 
     res.status(200).json({
       success: true,
@@ -272,6 +311,7 @@ const resetPassword = asyncHandler(async (req, res) => {
 
 module.exports = {
   registerUser,
+  createAdmin,
   loginUser,
   getUserProfile,
   updateUserProfile,
