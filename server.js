@@ -74,8 +74,8 @@ app.use('/api/cakes', cakeRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/wishlist', wishlistRoutes);
 app.use('/api/cart', cartRoutes);
-app.use('/api/orders', orderRoutes);
 app.use('/api/esewa', esewaRoutes);
+app.use('/api/orders', orderRoutes);
 
 //  error handlers
 

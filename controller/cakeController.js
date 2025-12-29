@@ -22,59 +22,77 @@ const getCakes = asyncHandler(async (req, res) => {
   // Build filter object
   const filter = {};
 
+  // 1. Status Filter
   if (active === 'all') {
-    // Don't filter by isActive
+    // No filter
   } else if (active === 'false') {
     filter.isActive = false;
   } else {
-    filter.isActive = true;
+    filter.isActive = true; // Default to showing only active
   }
 
-  // Handle category - can be ObjectId or slug
+  // 2. Category Filter (Handle ID or Slug)
   if (category) {
     if (mongoose.Types.ObjectId.isValid(category)) {
       filter.category = category;
     } else {
-      // It's a slug, look up the category first
       const Category = require('../model/Category');
       const categoryDoc = await Category.findOne({ slug: category });
       if (categoryDoc) {
         filter.category = categoryDoc._id;
+      } else {
+        // If slug invalid, force return empty result
+        filter.category = null; 
       }
     }
   }
+
+  // 3. Simple Filters
   if (badge) filter.badges = badge;
   if (featured === 'true') filter.isFeatured = true;
 
-  // Filter by flavor tags (supports comma-separated values)
+  // 4. Flavor Tags Filter
   if (flavorTags) {
     const tagsArray = flavorTags.split(',').map(tag => tag.trim());
     filter.flavorTags = { $in: tagsArray };
   }
 
+  // 5. Price Range Filter
+  // We check against ALL weight options. If ANY size fits the budget, show the cake.
   if (minPrice || maxPrice) {
     filter['weightOptions.price'] = {};
     if (minPrice) filter['weightOptions.price'].$gte = Number(minPrice);
     if (maxPrice) filter['weightOptions.price'].$lte = Number(maxPrice);
   }
 
-  if (search) filter.$text = { $search: search };
+  // 6. Search Filter (Regex for partial matching)
+  if (search) {
+    filter.$or = [
+      { name: { $regex: search, $options: 'i' } },
+      { description: { $regex: search, $options: 'i' } }
+    ];
+  }
 
+  // 7. Sorting Logic
   const allowedSortFields = {
     createdAt: true,
-    'weightOptions.price': true,
+    'weightOptions.price': true,    // General price sort
+    'weightOptions.0.price': true,  // ✅ ADDED: Specific start price sort
     ratingsAverage: true,
     ratingsCount: true,
     name: true,
   };
 
   let sortParam = sort;
+  
+  // Map frontend "basePrice" to the first weight option in the DB
   if (sort === 'basePrice' || sort === '-basePrice') {
     sortParam = sort.replace('basePrice', 'weightOptions.0.price');
   }
 
   const sortOptions = getSortOptions(sortParam, allowedSortFields);
 
+  // Execute Query
   const [cakes, totalItems] = await Promise.all([
     Cake.find(filter)
       .populate('category', 'name slug')
@@ -94,7 +112,6 @@ const getCakes = asyncHandler(async (req, res) => {
     pagination,
   });
 });
-
 // @desc    Get single cake by slug
 // @route   GET /api/cakes/:slug
 // @access  Public
