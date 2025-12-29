@@ -3,7 +3,7 @@
  * API endpoints for authentication and user management
  */
 
-const express = require('express');
+const express = require("express");
 const router = express.Router();
 
 const {
@@ -15,10 +15,11 @@ const {
   forgotPassword,
   verifyResetCode,
   resetPassword,
-} = require('../controller/userController');
+  getAllCustomers,
+} = require("../controller/userController");
 
-const { protect, admin } = require('../middleware/authMiddleware');
-const { validate } = require('../middleware/validateMiddleware');
+const { protect, admin } = require("../middleware/authMiddleware");
+const { validate } = require("../middleware/validateMiddleware");
 const {
   registerSchema,
   loginSchema,
@@ -26,24 +27,36 @@ const {
   forgotPasswordSchema,
   verifyResetCodeSchema,
   resetPasswordSchema,
-} = require('../validators/userValidators');
+} = require("../validators/userValidators");
 
 // Public routes
-router.post('/register', validate(registerSchema), registerUser);
-router.post('/login', validate(loginSchema), loginUser);
+router.post("/register", validate(registerSchema), registerUser);
+router.post("/login", validate(loginSchema), loginUser);
 
 // Password reset routes (Public)
-router.post('/forgot-password', validate(forgotPasswordSchema), forgotPassword);
-router.post('/verify-reset-code', validate(verifyResetCodeSchema), verifyResetCode);
-router.post('/reset-password', validate(resetPasswordSchema), resetPassword);
+router.post("/forgot-password", validate(forgotPasswordSchema), forgotPassword);
+router.post(
+  "/verify-reset-code",
+  validate(verifyResetCodeSchema),
+  verifyResetCode
+);
+router.post("/reset-password", validate(resetPasswordSchema), resetPassword);
 
 // Protected routes (requires JWT)
 router
-  .route('/profile')
+  .route("/profile")
   .get(protect, getUserProfile)
   .put(protect, validate(updateProfileSchema), updateUserProfile);
 
 // Admin-only routes (requires JWT + admin role)
-router.post('/admin', protect, admin, validate(registerSchema), createAdmin);
+router.post("/admin", protect, admin, validate(registerSchema), createAdmin);
+
+router.get(
+  "/customers",
+  protect,
+  admin,
+
+  getAllCustomers
+);
 
 module.exports = router;

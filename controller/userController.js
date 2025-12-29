@@ -112,6 +112,7 @@ const loginUser = asyncHandler(async (req, res) => {
 
   const user = await User.findOne({ email });
 
+
   if (user && (await user.matchPassword(password))) {
     res.status(200).json({
       success: true,
@@ -309,6 +310,21 @@ const resetPassword = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Get all customers (users)
+// @route   GET /api/users/customers
+// @access  Private/Admin
+const getAllCustomers = asyncHandler(async (req, res) => {
+  const customers = await User.find({ role: 'user' })
+    .select('-password')
+    .sort({ createdAt: -1 });
+
+  res.status(200).json({
+    success: true,
+    customers,
+  });
+});
+
+
 module.exports = {
   registerUser,
   createAdmin,
@@ -318,4 +334,5 @@ module.exports = {
   forgotPassword,
   verifyResetCode,
   resetPassword,
+  getAllCustomers,
 };
