@@ -8,13 +8,56 @@ const userRoutes = require('./routes/userRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
 const cakeRoutes = require('./routes/cakeRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
+const wishlistRoutes = require('./routes/wishlistRoutes');
+const cartRoutes = require('./routes/cartRoutes');
+const orderRoutes = require('./routes/orderRoutes');
+const esewaRoutes = require('./routes/esewaRoutes');
 
 const { errorHandler, notFound } = require('./middleware/errorMiddleware');
 
 const connectDB = require("./config/db");
 
 const app = express();
-app.use(cors());
+// ✅ Enhanced CORS configuration - explicit for browser compatibility
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow localhost and ngrok URLs
+    const allowedOrigins = [
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:3000',
+      process.env.FRONTEND_URL || 'http://localhost:5173',
+    ];
+
+    // Allow requests with no origin (like curl, Postman, mobile apps)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    // Allow ngrok URLs (for ngrok tunnels)
+    if (origin.includes('ngrok')) {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    // Also allow in development
+    if (process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
+
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 200,
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // ✅ Connect DB BEFORE starting server
@@ -29,6 +72,10 @@ app.use('/api/users', userRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/cakes', cakeRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/wishlist', wishlistRoutes);
+app.use('/api/cart', cartRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/esewa', esewaRoutes);
 
 //  error handlers
 
