@@ -7,8 +7,7 @@ const { ZodError } = require('zod');
 
 /**
  * Creates a validation middleware for a given Zod schema
- * @param {import('zod').ZodSchema} schema - Zod schema to validate against
- * @returns {Function} Express middleware function
+ * Expects schema to verify the full object: { body, params, query }
  */
 const validate = (schema) => {
   return async (req, res, next) => {
@@ -27,30 +26,13 @@ const validate = (schema) => {
 
       next();
     } catch (error) {
-      if (error instanceof ZodError) {
-        // Format Zod errors into readable messages
-        const errors = error.errors.map((err) => ({
-          field: err.path.join('.'),
-          message: err.message,
-        }));
-
-        return res.status(400).json({
-          success: false,
-          message: 'Validation failed',
-          errors,
-        });
-      }
-
-      // Re-throw non-Zod errors
-      next(error);
+      handleZodError(error, res, next);
     }
   };
 };
 
 /**
- * Validates only the request body (for simpler routes)
- * @param {import('zod').ZodSchema} schema - Zod schema for body
- * @returns {Function} Express middleware function
+ * Validates only the request body
  */
 const validateBody = (schema) => {
   return async (req, res, next) => {
@@ -58,28 +40,13 @@ const validateBody = (schema) => {
       req.body = await schema.parseAsync(req.body);
       next();
     } catch (error) {
-      if (error instanceof ZodError) {
-        const errors = error.errors.map((err) => ({
-          field: err.path.join('.'),
-          message: err.message,
-        }));
-
-        return res.status(400).json({
-          success: false,
-          message: 'Validation failed',
-          errors,
-        });
-      }
-
-      next(error);
+      handleZodError(error, res, next);
     }
   };
 };
 
 /**
  * Validates only the request params
- * @param {import('zod').ZodSchema} schema - Zod schema for params
- * @returns {Function} Express middleware function
  */
 const validateParams = (schema) => {
   return async (req, res, next) => {
@@ -87,28 +54,13 @@ const validateParams = (schema) => {
       req.params = await schema.parseAsync(req.params);
       next();
     } catch (error) {
-      if (error instanceof ZodError) {
-        const errors = error.errors.map((err) => ({
-          field: err.path.join('.'),
-          message: err.message,
-        }));
-
-        return res.status(400).json({
-          success: false,
-          message: 'Validation failed',
-          errors,
-        });
-      }
-
-      next(error);
+      handleZodError(error, res, next);
     }
   };
 };
 
 /**
  * Validates only the request query
- * @param {import('zod').ZodSchema} schema - Zod schema for query
- * @returns {Function} Express middleware function
  */
 const validateQuery = (schema) => {
   return async (req, res, next) => {
@@ -116,22 +68,41 @@ const validateQuery = (schema) => {
       req.query = await schema.parseAsync(req.query);
       next();
     } catch (error) {
-      if (error instanceof ZodError) {
-        const errors = error.errors.map((err) => ({
-          field: err.path.join('.'),
-          message: err.message,
-        }));
-
-        return res.status(400).json({
-          success: false,
-          message: 'Validation failed',
-          errors,
-        });
-      }
-
-      next(error);
+      handleZodError(error, res, next);
     }
   };
+};
+
+/**
+ * Shared Error Handler helper
+ * Prevents "Cannot read properties of undefined" crashes
+ */
+const handleZodError = (error, res, next) => {
+  // 1. Log the raw error so you can see it in the terminal
+  console.error(">> Validation Error Caught:", error);
+
+  if (error instanceof ZodError) {
+    // 2. Safe mapping (check if errors array exists)
+    const errorList = error.errors || [];
+    
+    const errors = errorList.map((err) => ({
+      field: err.path.join('.'),
+      message: err.message,
+    }));
+
+    return res.status(400).json({
+      success: false,
+      message: 'Validation failed',
+      errors,
+    });
+  }
+
+  // 3. Handle non-Zod errors (like syntax errors) gracefully
+  return res.status(500).json({
+    success: false,
+    message: 'Internal Server Error during validation',
+    error: error.message
+  });
 };
 
 module.exports = {

@@ -3,10 +3,14 @@
  * CRUD operations for orders
  */
 
-const asyncHandler = require('express-async-handler');
-const Order = require('../model/Order');
-const Cart = require('../model/Cart');
-const { getPaginationOptions, buildPaginationMeta, getSortOptions } = require('../utils/pagination');
+const asyncHandler = require("express-async-handler");
+const Order = require("../model/Order");
+const Cart = require("../model/Cart");
+const {
+  getPaginationOptions,
+  buildPaginationMeta,
+  getSortOptions,
+} = require("../utils/pagination");
 
 // @desc    Create new order from cart
 // @route   POST /api/orders
@@ -16,13 +20,13 @@ const createOrder = asyncHandler(async (req, res) => {
 
   // Get user's cart with populated cake data
   const cart = await Cart.findOne({ user: userId }).populate({
-    path: 'items.cake',
-    select: 'name images slug',
+    path: "items.cake",
+    select: "name images slug",
   });
 
   if (!cart || cart.items.length === 0) {
     res.status(400);
-    throw new Error('Your cart is empty');
+    throw new Error("Your cart is empty");
   }
 
   const {
@@ -41,7 +45,7 @@ const createOrder = asyncHandler(async (req, res) => {
   const orderItems = cart.items.map((item) => ({
     cake: item.cake._id,
     name: item.cake.name,
-    image: item.cake.images?.[0]?.url || '',
+    image: item.cake.images?.[0]?.url || "",
     quantity: item.quantity,
     weight: {
       weightInKg: item.selectedWeight.weightInKg,
@@ -51,8 +55,8 @@ const createOrder = asyncHandler(async (req, res) => {
     customizations: item.customization
       ? [
           {
-            name: 'Custom Message',
-            selectedOption: item.customization.message || '',
+            name: "Custom Message",
+            selectedOption: item.customization.message || "",
             priceAdjustment: 0,
           },
         ]
@@ -80,8 +84,8 @@ const createOrder = asyncHandler(async (req, res) => {
     specialRequests,
     subscribeNewsletter,
     paymentMethod,
-    paymentStatus: paymentMethod === 'cod' ? 'pending' : 'pending',
-    orderStatus: paymentMethod === 'cod' ? 'confirmed' : 'pending',
+    paymentStatus: paymentMethod === "cod" ? "pending" : "pending",
+    orderStatus: paymentMethod === "cod" ? "confirmed" : "pending",
     subtotal,
     shipping,
     discount,
@@ -90,14 +94,20 @@ const createOrder = asyncHandler(async (req, res) => {
   });
 
   // Clear the cart after successful order creation
-  await Cart.findOneAndUpdate({ user: userId }, { items: [], promoCode: null });
+  // If it is 'esewa', we wait until payment success in esewaController
+  if (paymentMethod === "cod") {
+    await Cart.findOneAndUpdate(
+      { user: userId },
+      { items: [], promoCode: null }
+    );
+  }
 
   // Populate for response
-  await order.populate('user', 'name email');
+  await order.populate("user", "name email");
 
   res.status(201).json({
     success: true,
-    message: 'Order created successfully',
+    message: "Order created successfully",
     data: order,
   });
 });
@@ -115,7 +125,11 @@ const getMyOrders = asyncHandler(async (req, res) => {
   if (paymentStatus) filter.paymentStatus = paymentStatus;
 
   const [orders, totalItems] = await Promise.all([
-    Order.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).select('-__v'),
+    Order.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .select("-__v"),
     Order.countDocuments(filter),
   ]);
 
@@ -123,7 +137,7 @@ const getMyOrders = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: 'Orders fetched successfully',
+    message: "Orders fetched successfully",
     data: orders,
     pagination,
   });
@@ -134,23 +148,26 @@ const getMyOrders = asyncHandler(async (req, res) => {
 // @access  Private
 const getOrderById = asyncHandler(async (req, res) => {
   const order = await Order.findById(req.params.id)
-    .populate('user', 'name email')
-    .select('-__v');
+    .populate("user", "name email")
+    .select("-__v");
 
   if (!order) {
     res.status(404);
-    throw new Error('Order not found');
+    throw new Error("Order not found");
   }
 
   // Check if user owns this order (unless admin)
-  if (order.user._id.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+  if (
+    order.user._id.toString() !== req.user._id.toString() &&
+    req.user.role !== "admin"
+  ) {
     res.status(403);
-    throw new Error('Not authorized to access this order');
+    throw new Error("Not authorized to access this order");
   }
 
   res.status(200).json({
     success: true,
-    message: 'Order fetched successfully',
+    message: "Order fetched successfully",
     data: order,
   });
 });
@@ -160,23 +177,26 @@ const getOrderById = asyncHandler(async (req, res) => {
 // @access  Private
 const getOrderByNumber = asyncHandler(async (req, res) => {
   const order = await Order.findOne({ orderNumber: req.params.orderNumber })
-    .populate('user', 'name email')
-    .select('-__v');
+    .populate("user", "name email")
+    .select("-__v");
 
   if (!order) {
     res.status(404);
-    throw new Error('Order not found');
+    throw new Error("Order not found");
   }
 
   // Check if user owns this order (unless admin)
-  if (order.user._id.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+  if (
+    order.user._id.toString() !== req.user._id.toString() &&
+    req.user.role !== "admin"
+  ) {
     res.status(403);
-    throw new Error('Not authorized to access this order');
+    throw new Error("Not authorized to access this order");
   }
 
   res.status(200).json({
     success: true,
-    message: 'Order fetched successfully',
+    message: "Order fetched successfully",
     data: order,
   });
 });
@@ -191,7 +211,14 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
 
   if (!order) {
     res.status(404);
-    throw new Error('Order not found');
+    throw new Error("Order not found");
+  }
+
+  if (order.paymentStatus === "failed" && status !== "cancelled") {
+    res.status(400);
+    throw new Error(
+      "Cannot process an order with failed payment. Please create a new order."
+    );
   }
 
   try {
@@ -218,23 +245,26 @@ const cancelOrder = asyncHandler(async (req, res) => {
 
   if (!order) {
     res.status(404);
-    throw new Error('Order not found');
+    throw new Error("Order not found");
   }
 
   // Check if user owns this order
-  if (order.user.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+  if (
+    order.user.toString() !== req.user._id.toString() &&
+    req.user.role !== "admin"
+  ) {
     res.status(403);
-    throw new Error('Not authorized to cancel this order');
+    throw new Error("Not authorized to cancel this order");
   }
 
   // Check if order can be cancelled
   if (!order.canBeCancelled) {
     res.status(400);
-    throw new Error('This order cannot be cancelled');
+    throw new Error("This order cannot be cancelled");
   }
 
   try {
-    await order.updateStatus('cancelled', reason);
+    await order.updateStatus("cancelled", reason);
   } catch (error) {
     res.status(400);
     throw new Error(error.message);
@@ -244,7 +274,7 @@ const cancelOrder = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: 'Order cancelled successfully',
+    message: "Order cancelled successfully",
     data: order,
   });
 });
@@ -252,40 +282,62 @@ const cancelOrder = asyncHandler(async (req, res) => {
 // @desc    Get all orders (Admin)
 // @route   GET /api/orders/all
 // @access  Private/Admin
-const getAllOrders = asyncHandler(async (req, res) => {
-  const { page, limit, skip } = getPaginationOptions(req.query);
-  const { status, paymentStatus, sort } = req.query;
+// orderController.js
 
+// @desc    Get all orders (Admin)
+// @route   GET /api/orders/all
+const getAllOrders = asyncHandler(async (req, res) => {
+  const {
+    page = 1,
+    limit = 10,
+    status,
+    paymentStatus,
+    search,
+    sort,
+  } = req.query;
+
+  // 1. Base Filter
   const filter = {};
 
+  // 2. Add Status Filters
   if (status) filter.orderStatus = status;
   if (paymentStatus) filter.paymentStatus = paymentStatus;
 
-  const allowedSortFields = {
-    createdAt: true,
-    total: true,
-    orderStatus: true,
-  };
+  // 3. Add Search Logic (Search by Order Number or User Email)
+  if (search) {
+    // We need to look up users first if we want to search by email/name
+    // OR just search by Order Number directly
+    const searchRegex = { $regex: search, $options: "i" };
 
-  const sortOptions = getSortOptions(sort, allowedSortFields);
+    // Simple search: Order Number OR Promo Code
+    filter.$or = [{ orderNumber: searchRegex }, { promoCode: searchRegex }];
 
-  const [orders, totalItems] = await Promise.all([
-    Order.find(filter)
-      .populate('user', 'name email')
-      .sort(sortOptions)
-      .skip(skip)
-      .limit(limit)
-      .select('-__v'),
-    Order.countDocuments(filter),
-  ]);
+    // NOTE: Searching by User Name in a referenced collection (populate)
+    // is complex in Mongoose. Usually, it's better to just search Order ID.
+  }
 
-  const pagination = buildPaginationMeta(totalItems, page, limit);
+  // 4. Calculate Skip
+  const skip = (page - 1) * limit;
+
+  // 5. Fetch Data
+  const orders = await Order.find(filter)
+    .populate("user", "name email")
+    .sort(sort || { createdAt: -1 })
+    .skip(skip)
+    .limit(Number(limit));
+
+  // 6. Count Total (for Pagination)
+  const total = await Order.countDocuments(filter);
 
   res.status(200).json({
     success: true,
-    message: 'Orders fetched successfully',
     data: orders,
-    pagination,
+    pagination: {
+      page: Number(page),
+      limit: Number(limit),
+      totalItems: total,
+      totalPages: Math.ceil(total / limit),
+    },
   });
 });
 
@@ -296,9 +348,13 @@ const getOrderStats = asyncHandler(async (req, res) => {
   const stats = await Order.aggregate([
     {
       $facet: {
-        byStatus: [{ $group: { _id: '$orderStatus', count: { $sum: 1 } } }],
-        byPaymentStatus: [{ $group: { _id: '$paymentStatus', count: { $sum: 1 } } }],
-        byPaymentMethod: [{ $group: { _id: '$paymentMethod', count: { $sum: 1 } } }],
+        byStatus: [{ $group: { _id: "$orderStatus", count: { $sum: 1 } } }],
+        byPaymentStatus: [
+          { $group: { _id: "$paymentStatus", count: { $sum: 1 } } },
+        ],
+        byPaymentMethod: [
+          { $group: { _id: "$paymentMethod", count: { $sum: 1 } } },
+        ],
         totals: [
           {
             $group: {
@@ -306,21 +362,32 @@ const getOrderStats = asyncHandler(async (req, res) => {
               totalOrders: { $sum: 1 },
               totalRevenue: {
                 $sum: {
-                  $cond: [{ $eq: ['$paymentStatus', 'paid'] }, '$total', 0],
+                  $cond: [{ $eq: ["$paymentStatus", "paid"] }, "$total", 0],
                 },
               },
-              averageOrderValue: { $avg: '$total' },
+              averageOrderValue: { $avg: "$total" },
             },
           },
         ],
-        recentOrders: [{ $sort: { createdAt: -1 } }, { $limit: 5 }, { $project: { orderNumber: 1, total: 1, orderStatus: 1, createdAt: 1 } }],
+        recentOrders: [
+          { $sort: { createdAt: -1 } },
+          { $limit: 5 },
+          {
+            $project: {
+              orderNumber: 1,
+              total: 1,
+              orderStatus: 1,
+              createdAt: 1,
+            },
+          },
+        ],
       },
     },
   ]);
 
   res.status(200).json({
     success: true,
-    message: 'Order statistics fetched successfully',
+    message: "Order statistics fetched successfully",
     data: stats[0],
   });
 });

@@ -288,7 +288,7 @@ orderSchema.methods.updateStatus = async function (newStatus, notes = '') {
     pending: ['confirmed', 'cancelled'],
     confirmed: ['processing', 'cancelled'],
     processing: ['out_for_delivery', 'cancelled'],
-    out_for_delivery: ['delivered'],
+    out_for_delivery: ['delivered', 'cancelled'],
     delivered: [],
     cancelled: [],
   };
