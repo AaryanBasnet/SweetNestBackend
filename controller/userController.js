@@ -314,16 +314,89 @@ const resetPassword = asyncHandler(async (req, res) => {
 // @route   GET /api/users/customers
 // @access  Private/Admin
 const getAllCustomers = asyncHandler(async (req, res) => {
-  const customers = await User.find({ role: 'user' })
-    .select('-password')
-    .sort({ createdAt: -1 });
+  const { search, sort = 'createdAt', order = 'desc', page = 1, limit = 10 } = req.query;
+
+  // --- PART 1: Table Data (Search & Pagination) ---
+  const matchStage = { role: 'user' };
+  if (search) {
+    const searchRegex = { $regex: search, $options: 'i' };
+    matchStage.$or = [{ name: searchRegex }, { email: searchRegex }];
+  }
+
+  // Define the pipeline for the table data
+  const tablePipeline = [
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: 'orders',
+        localField: '_id',
+        foreignField: 'user',
+        as: 'orderHistory'
+      }
+    },
+    {
+      $project: {
+        _id: 1, name: 1, email: 1, phone: 1, avatar: 1, createdAt: 1,
+        orders: { $size: '$orderHistory' },
+        totalSpent: { $sum: '$orderHistory.total' }
+      }
+    },
+    { $sort: { [sort]: order === 'asc' ? 1 : -1 } },
+    {
+      $facet: {
+        metadata: [{ $count: 'total' }],
+        data: [{ $skip: (parseInt(page) - 1) * parseInt(limit) }, { $limit: parseInt(limit) }]
+      }
+    }
+  ];
+
+  // --- PART 2: Global Stats (For the top cards) ---
+  // We calculate this separately so it doesn't change when you type in the search bar
+  const statsPipeline = [
+    { $match: { role: 'user' } }, // Match ALL users
+    {
+      $lookup: {
+        from: 'orders',
+        localField: '_id',
+        foreignField: 'user',
+        as: 'orderHistory'
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        totalCustomers: { $sum: 1 },
+        totalRevenue: { $sum: { $sum: "$orderHistory.total" } }, // Sum of all users' totals
+        totalOrders: { $sum: { $size: "$orderHistory" } }
+      }
+    }
+  ];
+
+  // Run both queries in parallel for performance
+  const [tableResults, statsResults] = await Promise.all([
+    User.aggregate(tablePipeline),
+    User.aggregate(statsPipeline)
+  ]);
+
+  // Extract Data
+  const customers = tableResults[0].data;
+  const totalFiltered = tableResults[0].metadata[0] ? tableResults[0].metadata[0].total : 0;
+  
+  // Extract Stats (Default to 0 if no users exist)
+  const stats = statsResults[0] || { totalCustomers: 0, totalRevenue: 0, totalOrders: 0 };
 
   res.status(200).json({
     success: true,
-    customers,
+    customers, // The 10 rows for the table
+    stats,     // The big numbers for the top cards
+    pagination: {
+      total: totalFiltered,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      pages: Math.ceil(totalFiltered / limit),
+    }
   });
 });
-
 
 module.exports = {
   registerUser,
