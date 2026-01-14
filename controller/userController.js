@@ -9,6 +9,8 @@ const User = require('../model/User');
 const PasswordResetToken = require('../model/PasswordResetToken');
 const { sendPasswordResetEmail } = require('../config/email');
 const jwt = require('jsonwebtoken');
+const { processAndUploadSingleFile } = require('../middleware/uploadMiddleware');
+const { deleteImage } = require('../config/cloudinary');
 
 // --- Helper: Generate JWT ---
 const generateToken = (id) => {
@@ -167,12 +169,33 @@ const updateUserProfile = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id);
 
   if (user) {
+    // Handle avatar upload to Cloudinary
+    if (req.file) {
+      // Delete old avatar from Cloudinary if it exists
+      if (user.avatar) {
+        try {
+          // Extract public_id from Cloudinary URL
+          const urlParts = user.avatar.split('/');
+          const filename = urlParts[urlParts.length - 1].split('.')[0];
+          const folder = urlParts.slice(-2, -1)[0]; // Get folder name
+          const publicId = `sweetnest/${folder}/${filename}`;
+          await deleteImage(publicId);
+        } catch (error) {
+          console.error('Error deleting old avatar:', error);
+          // Continue with upload even if delete fails
+        }
+      }
+
+      // Upload new avatar to Cloudinary
+      const uploadResult = await processAndUploadSingleFile(req.file, 'sweetnest/avatars');
+      user.avatar = uploadResult.url;
+    }
+
     // Update fields from validated body
     if (req.body.name) user.name = req.body.name;
     if (req.body.email) user.email = req.body.email;
     if (req.body.phone !== undefined) user.phone = req.body.phone;
     if (req.body.address !== undefined) user.address = req.body.address;
-    if (req.body.avatar) user.avatar = req.body.avatar;
     if (req.body.password) user.password = req.body.password;
 
     // SECURITY: Role is NOT updated from request body

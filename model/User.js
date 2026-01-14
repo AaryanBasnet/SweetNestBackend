@@ -130,6 +130,21 @@ const userSchema = new mongoose.Schema(
       },
       default: [],
     },
+    sweetPoints: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    pointsHistory: [
+      {
+        amount: { type: Number, required: true },
+        type: { type: String, enum: ['earned', 'redeemed'], required: true },
+        description: { type: String, required: true },
+        relatedOrder: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' },
+        relatedCoupon: { type: mongoose.Schema.Types.ObjectId, ref: 'Coupon' },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   { timestamps: true }
 );

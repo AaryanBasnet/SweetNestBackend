@@ -20,6 +20,7 @@ const {
 
 const { protect, admin } = require("../middleware/authMiddleware");
 const { validate } = require("../middleware/validateMiddleware");
+const { uploadCakeImages } = require("../middleware/uploadMiddleware");
 const {
   registerSchema,
   loginSchema,
@@ -46,7 +47,12 @@ router.post("/reset-password", validate(resetPasswordSchema), resetPassword);
 router
   .route("/profile")
   .get(protect, getUserProfile)
-  .put(protect, validate(updateProfileSchema), updateUserProfile);
+  .put(
+    protect,
+    uploadCakeImages.single('avatar'),
+    validate(updateProfileSchema),
+    updateUserProfile
+  );
 
 // Admin-only routes (requires JWT + admin role)
 router.post("/admin", protect, admin, validate(registerSchema), createAdmin);

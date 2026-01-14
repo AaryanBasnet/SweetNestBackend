@@ -4,23 +4,20 @@ dotenv.config();
 const express = require("express");
 const cors = require("cors");
 
-const userRoutes = require('./routes/userRoutes');
-const categoryRoutes = require('./routes/categoryRoutes');
-const cakeRoutes = require('./routes/cakeRoutes');
-const reviewRoutes = require('./routes/reviewRoutes');
-const wishlistRoutes = require('./routes/wishlistRoutes');
-const cartRoutes = require('./routes/cartRoutes');
-const orderRoutes = require('./routes/orderRoutes');
-const esewaRoutes = require('./routes/esewaRoutes');
-const addressRoutes = require('./routes/addressRoutes');
-const notificationRoutes = require('./routes/notificationRoutes');
-const analyticsRoutes = require('./routes/analyticsRoutes');
+const userRoutes = require("./routes/userRoutes");
+const categoryRoutes = require("./routes/categoryRoutes");
+const cakeRoutes = require("./routes/cakeRoutes");
+const reviewRoutes = require("./routes/reviewRoutes");
+const wishlistRoutes = require("./routes/wishlistRoutes");
+const cartRoutes = require("./routes/cartRoutes");
+const orderRoutes = require("./routes/orderRoutes");
+const esewaRoutes = require("./routes/esewaRoutes");
+const addressRoutes = require("./routes/addressRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
+const analyticsRoutes = require("./routes/analyticsRoutes");
+const rewardsRoutes = require("./routes/rewardsRoutes");
 
-
-
-
-
-const { errorHandler, notFound } = require('./middleware/errorMiddleware');
+const { errorHandler, notFound } = require("./middleware/errorMiddleware");
 
 const connectDB = require("./config/db");
 
@@ -30,11 +27,11 @@ const corsOptions = {
   origin: function (origin, callback) {
     // Allow localhost and ngrok URLs
     const allowedOrigins = [
-      'http://localhost:5173',
-      'http://localhost:3000',
-      'http://127.0.0.1:5173',
-      'http://127.0.0.1:3000',
-      process.env.FRONTEND_URL || 'http://localhost:5173',
+      "http://localhost:5173",
+      "http://localhost:3000",
+      "http://127.0.0.1:5173",
+      "http://127.0.0.1:3000",
+      process.env.FRONTEND_URL || "http://localhost:5173",
     ];
 
     // Allow requests with no origin (like curl, Postman, mobile apps)
@@ -43,7 +40,7 @@ const corsOptions = {
     }
 
     // Allow ngrok URLs (for ngrok tunnels)
-    if (origin.includes('ngrok')) {
+    if (origin.includes("ngrok")) {
       return callback(null, true);
     }
 
@@ -52,15 +49,15 @@ const corsOptions = {
     }
 
     // Also allow in development
-    if (process.env.NODE_ENV !== 'production') {
+    if (process.env.NODE_ENV !== "production") {
       return callback(null, true);
     }
 
-    return callback(new Error('Not allowed by CORS'));
+    return callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
   optionsSuccessStatus: 200,
 };
 
@@ -75,20 +72,18 @@ app.get("/", (req, res) => {
 });
 
 // Routes
-app.use('/api/users', userRoutes);
-app.use('/api/categories', categoryRoutes);
-app.use('/api/cakes', cakeRoutes);
-app.use('/api/reviews', reviewRoutes);
-app.use('/api/wishlist', wishlistRoutes);
-app.use('/api/cart', cartRoutes);
-app.use('/api/esewa', esewaRoutes);
-app.use('/api/orders', orderRoutes);
-app.use('/api/addresses', addressRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/analytics', analyticsRoutes);
-
-
-
+app.use("/api/users", userRoutes);
+app.use("/api/categories", categoryRoutes);
+app.use("/api/cakes", cakeRoutes);
+app.use("/api/reviews", reviewRoutes);
+app.use("/api/wishlist", wishlistRoutes);
+app.use("/api/cart", cartRoutes);
+app.use("/api/esewa", esewaRoutes);
+app.use("/api/orders", orderRoutes);
+app.use("/api/addresses", addressRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/analytics", analyticsRoutes);
+app.use("/api/rewards", rewardsRoutes);
 
 //  error handlers
 

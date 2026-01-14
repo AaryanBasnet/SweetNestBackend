@@ -11,7 +11,7 @@ const orderItemSchema = new mongoose.Schema(
     cake: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Cake',
-      required: true,
+      required: false, // Optional for custom cakes
     },
     name: {
       type: String,
@@ -19,7 +19,7 @@ const orderItemSchema = new mongoose.Schema(
     },
     image: {
       type: String,
-      required: true,
+      required: false, // Optional - custom cakes might have base64 images
     },
     quantity: {
       type: Number,
@@ -31,10 +31,15 @@ const orderItemSchema = new mongoose.Schema(
       label: { type: String, required: true },
       price: { type: Number, required: true },
     },
+    isCustom: {
+      type: Boolean,
+      default: false, // True for custom designed cakes
+    },
     customizations: [
       {
         name: String,
         selectedOption: String,
+        details: mongoose.Schema.Types.Mixed, // For custom cake configuration
         priceAdjustment: { type: Number, default: 0 },
       },
     ],
