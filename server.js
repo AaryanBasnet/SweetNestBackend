@@ -8,6 +8,17 @@ const userRoutes = require('./routes/userRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
 const cakeRoutes = require('./routes/cakeRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
+const wishlistRoutes = require('./routes/wishlistRoutes');
+const cartRoutes = require('./routes/cartRoutes');
+const orderRoutes = require('./routes/orderRoutes');
+const esewaRoutes = require('./routes/esewaRoutes');
+const addressRoutes = require('./routes/addressRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const analyticsRoutes = require('./routes/analyticsRoutes');
+
+
+
+
 
 const { errorHandler, notFound } = require('./middleware/errorMiddleware');
 
@@ -29,6 +40,16 @@ app.use('/api/users', userRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/cakes', cakeRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/wishlist', wishlistRoutes);
+app.use('/api/cart', cartRoutes);
+app.use('/api/esewa', esewaRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/addresses', addressRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/analytics', analyticsRoutes);
+
+
+
 
 //  error handlers
 
