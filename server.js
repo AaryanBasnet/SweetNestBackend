@@ -14,6 +14,9 @@ const orderRoutes = require('./routes/orderRoutes');
 const esewaRoutes = require('./routes/esewaRoutes');
 const addressRoutes = require('./routes/addressRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const analyticsRoutes = require('./routes/analyticsRoutes');
+
+
 
 
 
@@ -82,6 +85,8 @@ app.use('/api/esewa', esewaRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/addresses', addressRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/analytics', analyticsRoutes);
+
 
 
 
