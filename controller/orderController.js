@@ -11,6 +11,7 @@ const {
   buildPaginationMeta,
   getSortOptions,
 } = require("../utils/pagination");
+const { awardPoints } = require("./rewardsController");
 
 // @desc    Create new order from cart
 // @route   POST /api/orders
@@ -42,27 +43,67 @@ const createOrder = asyncHandler(async (req, res) => {
   const orderNumber = await Order.generateOrderNumber();
 
   // Build order items from cart
-  const orderItems = cart.items.map((item) => ({
-    cake: item.cake._id,
-    name: item.cake.name,
-    image: item.cake.images?.[0]?.url || "",
-    quantity: item.quantity,
-    weight: {
-      weightInKg: item.selectedWeight.weightInKg,
-      label: item.selectedWeight.label,
-      price: item.selectedWeight.price,
-    },
-    customizations: item.customization
-      ? [
+  const orderItems = cart.items.map((item) => {
+    // Check if this is a custom cake (stored locally, not in database)
+    const isCustomCake = !item.cake || !item.cake._id;
+
+    if (isCustomCake) {
+      // Handle custom cake order item
+      return {
+        cake: null, // No database reference
+        name: item.customization?.name || `Custom ${item.customization?.flavor} Cake`,
+        image: item.customization?.previewImage || "",
+        quantity: item.quantity,
+        weight: {
+          weightInKg: item.selectedWeight.weightInKg,
+          label: item.selectedWeight.label || `${item.selectedWeight.weightInKg}kg`,
+          price: item.selectedWeight.price,
+        },
+        isCustom: true,
+        customizations: [
           {
-            name: "Custom Message",
-            selectedOption: item.customization.message || "",
-            priceAdjustment: 0,
+            name: "Custom Cake Design",
+            details: {
+              tiers: item.customization?.tiers,
+              size: item.customization?.size,
+              flavor: item.customization?.flavor,
+              frostingColor: item.customization?.color,
+              frostingColorHex: item.customization?.frostingColorHex,
+              topper: item.customization?.topper,
+              topperPrice: item.customization?.topperPrice || 0,
+              message: item.customization?.message || "",
+            },
+            priceAdjustment: item.customization?.topperPrice || 0,
           },
-        ]
-      : [],
-    itemTotal: item.selectedWeight.price * item.quantity,
-  }));
+        ],
+        itemTotal: item.selectedWeight.price * item.quantity,
+      };
+    }
+
+    // Handle regular cake order item
+    return {
+      cake: item.cake._id,
+      name: item.cake.name,
+      image: item.cake.images?.[0]?.url || "",
+      quantity: item.quantity,
+      weight: {
+        weightInKg: item.selectedWeight.weightInKg,
+        label: item.selectedWeight.label,
+        price: item.selectedWeight.price,
+      },
+      isCustom: false,
+      customizations: item.customization
+        ? [
+            {
+              name: "Custom Message",
+              selectedOption: item.customization.message || "",
+              priceAdjustment: 0,
+            },
+          ]
+        : [],
+      itemTotal: item.selectedWeight.price * item.quantity,
+    };
+  });
 
   // Calculate totals
   const subtotal = cart.subtotal;
@@ -221,11 +262,24 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     );
   }
 
+  const previousStatus = order.orderStatus;
+
   try {
     await order.updateStatus(status, notes);
   } catch (error) {
     res.status(400);
     throw new Error(error.message);
+  }
+
+  // Award SweetPoints when order is delivered
+  if (status === "delivered" && previousStatus !== "delivered") {
+    try {
+      await awardPoints(order.user.toString(), order._id, order.total);
+      console.log(`Awarded points for order ${order.orderNumber}`);
+    } catch (error) {
+      console.error("Error awarding points:", error);
+      // Don't fail the order status update if points awarding fails
+    }
   }
 
   res.status(200).json({
