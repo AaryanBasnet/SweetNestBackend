@@ -12,6 +12,7 @@ const {
   getOrderByNumber,
   updateOrderStatus,
   cancelOrder,
+  processRefund,
   getAllOrders,
   getOrderStats,
 } = require('../controller/orderController');
@@ -36,5 +37,6 @@ router.put('/:id/cancel', protect, validate(cancelOrderSchema), cancelOrder);
 router.get('/admin/all', protect, admin, validate(getOrdersQuerySchema), getAllOrders);
 router.get('/admin/stats', protect, admin, getOrderStats);
 router.put('/:id/status', protect, admin, validate(updateOrderStatusSchema), updateOrderStatus);
+router.put('/:id/refund', protect, admin, processRefund);
 
 module.exports = router;

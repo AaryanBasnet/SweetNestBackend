@@ -216,6 +216,26 @@ const orderSchema = new mongoose.Schema(
     cancelledAt: Date,
     cancelReason: String,
     deliveredAt: Date,
+    // Refund fields
+    refundedAt: Date,
+    refundAmount: {
+      type: Number,
+      min: 0,
+    },
+    refundReason: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+    },
+    refundedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    refundNotes: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+    },
   },
   {
     timestamps: true,
@@ -333,6 +353,43 @@ orderSchema.methods.markAsPaid = async function (esewaDetails = {}) {
   }
   return this.save();
 };
+
+// Method: Process refund (manual refund by admin)
+orderSchema.methods.processRefund = async function (refundData = {}) {
+  const { amount, reason, notes, adminId } = refundData;
+
+  // Can only refund paid orders
+  if (this.paymentStatus !== 'paid') {
+    throw new Error('Can only refund orders that have been paid');
+  }
+
+  // Validate refund amount
+  const refundAmount = amount || this.total;
+  if (refundAmount > this.total) {
+    throw new Error('Refund amount cannot exceed order total');
+  }
+
+  this.paymentStatus = 'refunded';
+  this.refundedAt = new Date();
+  this.refundAmount = refundAmount;
+  this.refundReason = reason || 'Customer requested refund';
+  this.refundNotes = notes || '';
+  this.refundedBy = adminId;
+
+  // Cancel the order if not already cancelled
+  if (!['cancelled', 'delivered'].includes(this.orderStatus)) {
+    this.orderStatus = 'cancelled';
+    this.cancelledAt = new Date();
+    this.cancelReason = reason || 'Order refunded';
+  }
+
+  return this.save();
+};
+
+// Virtual: Check if order can be refunded
+orderSchema.virtual('canBeRefunded').get(function () {
+  return this.paymentStatus === 'paid' && this.paymentMethod === 'esewa';
+});
 
 const Order = mongoose.model('Order', orderSchema);
 

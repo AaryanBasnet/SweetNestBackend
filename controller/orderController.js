@@ -333,6 +333,53 @@ const cancelOrder = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Process refund for an order (Admin)
+// @route   PUT /api/orders/:id/refund
+// @access  Private/Admin
+const processRefund = asyncHandler(async (req, res) => {
+  const { amount, reason, notes } = req.body;
+
+  const order = await Order.findById(req.params.id);
+
+  if (!order) {
+    res.status(404);
+    throw new Error("Order not found");
+  }
+
+  // Check if order can be refunded
+  if (order.paymentStatus !== "paid") {
+    res.status(400);
+    throw new Error("Can only refund orders that have been paid");
+  }
+
+  // Validate refund amount if provided
+  if (amount && amount > order.total) {
+    res.status(400);
+    throw new Error("Refund amount cannot exceed order total");
+  }
+
+  try {
+    await order.processRefund({
+      amount: amount || order.total,
+      reason: reason || "Customer requested refund",
+      notes: notes || "",
+      adminId: req.user._id,
+    });
+  } catch (error) {
+    res.status(400);
+    throw new Error(error.message);
+  }
+
+  // Populate for response
+  await order.populate("refundedBy", "name email");
+
+  res.status(200).json({
+    success: true,
+    message: "Refund processed successfully. Please complete the refund manually via eSewa dashboard or bank transfer.",
+    data: order,
+  });
+});
+
 // @desc    Get all orders (Admin)
 // @route   GET /api/orders/all
 // @access  Private/Admin
@@ -453,6 +500,7 @@ module.exports = {
   getOrderByNumber,
   updateOrderStatus,
   cancelOrder,
+  processRefund,
   getAllOrders,
   getOrderStats,
 };
