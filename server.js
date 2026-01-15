@@ -24,6 +24,8 @@ const contactRoutes = require('./routes/contactRoutes');
 const { errorHandler, notFound } = require("./middleware/errorMiddleware");
 
 const connectDB = require("./config/db");
+const seedHeroCakes = require('./utils/seedHeroCakes');
+
 
 const app = express();
 // ✅ Enhanced CORS configuration - explicit for browser compatibility
@@ -69,7 +71,10 @@ app.use(cors(corsOptions));
 app.use(express.json());
 
 // ✅ Connect DB BEFORE starting server
-connectDB();
+connectDB().then(() => {
+  // Seed hero cakes after DB connection
+  seedHeroCakes();
+});
 
 app.get("/", (req, res) => {
   res.send("API Running...");

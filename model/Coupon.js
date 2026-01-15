@@ -5,6 +5,13 @@
 
 const mongoose = require('mongoose');
 
+// Helper function to generate coupon code
+function generateCouponCode() {
+  const prefix = 'SWEET';
+  const randomStr = Math.random().toString(36).substring(2, 8).toUpperCase();
+  return `${prefix}${randomStr}`;
+}
+
 const couponSchema = new mongoose.Schema(
   {
     user: {
@@ -19,6 +26,7 @@ const couponSchema = new mongoose.Schema(
       unique: true,
       uppercase: true,
       trim: true,
+      default: generateCouponCode, // ✅ FIX 1: Generate code automatically here
     },
     discountType: {
       type: String,
@@ -30,17 +38,14 @@ const couponSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
-    // Maximum discount amount (for percentage types)
     maxDiscount: {
       type: Number,
       default: null,
     },
-    // Minimum order amount to use coupon
     minOrderAmount: {
       type: Number,
       default: 0,
     },
-    // Reward tier information
     rewardTier: {
       name: { type: String, required: true },
       pointsCost: { type: Number, required: true },
@@ -70,20 +75,8 @@ const couponSchema = new mongoose.Schema(
 couponSchema.index({ user: 1, isUsed: 1, expiresAt: 1 });
 couponSchema.index({ code: 1 });
 
-// Auto-generate unique coupon code
-couponSchema.pre('validate', function (next) {
-  if (!this.code) {
-    this.code = generateCouponCode();
-  }
-  next();
-});
-
-// Helper function to generate coupon code
-function generateCouponCode() {
-  const prefix = 'SWEET';
-  const randomStr = Math.random().toString(36).substring(2, 8).toUpperCase();
-  return `${prefix}${randomStr}`;
-}
+// ❌ DELETED: The broken pre('validate') hook is gone.
+// We rely on 'default: generateCouponCode' above instead.
 
 // Method to check if coupon is valid
 couponSchema.methods.isValid = function () {
