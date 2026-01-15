@@ -17,6 +17,8 @@ const notificationRoutes = require("./routes/notificationRoutes");
 const analyticsRoutes = require("./routes/analyticsRoutes");
 const rewardsRoutes = require("./routes/rewardsRoutes");
 const promotionRoutes = require('./routes/promotionRoutes');
+const contactRoutes = require('./routes/contactRoutes');
+
 
 
 const { errorHandler, notFound } = require("./middleware/errorMiddleware");
@@ -87,6 +89,8 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/rewards", rewardsRoutes);
 app.use('/api/promotions', promotionRoutes);
+app.use('/api/contact', contactRoutes);
+
 
 
 
