@@ -7,7 +7,7 @@
 const asyncHandler = require('express-async-handler');
 const mongoose = require('mongoose');
 const Cake = require('../model/Cake');
-const { deleteImage, deleteMultipleImages } = require('../config/cloudinary');
+const { deleteMultipleImages } = require('../config/cloudinary');
 const { processAndUploadFiles } = require('../middleware/uploadMiddleware');
 const { getPaginationOptions, buildPaginationMeta, getSortOptions } = require('../utils/pagination');
 const { getFlavorTags } = require('../utils/flavorDetector');

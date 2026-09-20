@@ -6,10 +6,7 @@
 const asyncHandler = require('express-async-handler');
 const Order = require('../model/Order');
 const User = require('../model/User');
-const Cake = require('../model/Cake');
-const Category = require('../model/Category');
 const Review = require('../model/Review');
-const mongoose = require('mongoose');
 
 /**
  * @desc    Get overview analytics (main dashboard stats)

@@ -9,7 +9,6 @@ const Cart = require("../model/Cart");
 const {
   getPaginationOptions,
   buildPaginationMeta,
-  getSortOptions,
 } = require("../utils/pagination");
 const { awardPoints } = require("./rewardsController");
 

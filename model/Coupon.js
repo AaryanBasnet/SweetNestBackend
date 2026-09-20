@@ -73,7 +73,7 @@ const couponSchema = new mongoose.Schema(
 
 // Index for efficient queries
 couponSchema.index({ user: 1, isUsed: 1, expiresAt: 1 });
-couponSchema.index({ code: 1 });
+// NOTE: `unique: true` on `code` already creates this index.
 
 // ❌ DELETED: The broken pre('validate') hook is gone.
 // We rely on 'default: generateCouponCode' above instead.
