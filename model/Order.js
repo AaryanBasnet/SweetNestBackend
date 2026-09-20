@@ -340,6 +340,9 @@ orderSchema.methods.updateStatus = async function (newStatus, notes = '') {
 
 // Method: Mark payment as completed
 orderSchema.methods.markAsPaid = async function (esewaDetails = {}) {
+  // Idempotent: replaying a payment callback must not re-run side effects.
+  if (this.paymentStatus === 'paid') return this;
+
   this.paymentStatus = 'paid';
   if (Object.keys(esewaDetails).length > 0) {
     this.esewa = {
@@ -352,6 +355,58 @@ orderSchema.methods.markAsPaid = async function (esewaDetails = {}) {
     this.orderStatus = 'confirmed';
   }
   return this.save();
+};
+
+/**
+ * Atomically mark an order paid, exactly once.
+ *
+ * The read-then-write version of this (load the doc, check the status, save)
+ * has a race: two payment callbacks arriving together both read 'pending',
+ * both write 'paid', and any side effect hanging off it runs twice. The
+ * condition lives inside the update here, so the database decides the winner.
+ *
+ * Returns the updated order, or null if it was already paid - which is how the
+ * caller tells "I settled this" apart from "someone else already did".
+ *
+ * NOTE: this is a single-document atomic update, which works on a standalone
+ * mongod. Making the order update and the cart clear atomic *together* would
+ * need a multi-document transaction, and that requires a replica set.
+ */
+orderSchema.statics.markPaidOnce = function (orderId, paymentDetails = {}) {
+  return this.findOneAndUpdate(
+    { _id: orderId, paymentStatus: { $ne: 'paid' } },
+    [
+      {
+        $set: {
+          paymentStatus: 'paid',
+          esewa: { ...paymentDetails, paidAt: new Date() },
+          // Confirm the order, but never drag a further-along order backwards.
+          orderStatus: {
+            $cond: [
+              { $eq: ['$orderStatus', 'pending'] },
+              'confirmed',
+              '$orderStatus',
+            ],
+          },
+        },
+      },
+    ],
+    // updatePipeline is required by Mongoose when the update is an
+    // aggregation pipeline rather than a plain update document.
+    { new: true, updatePipeline: true }
+  );
+};
+
+/**
+ * Mark a payment failed, but never overwrite a successful one.
+ * Guards against a late failure callback clobbering a settled payment.
+ */
+orderSchema.statics.markPaymentFailed = function (orderId) {
+  return this.findOneAndUpdate(
+    { _id: orderId, paymentStatus: { $nin: ['paid', 'refunded'] } },
+    { $set: { paymentStatus: 'failed' } },
+    { new: true }
+  );
 };
 
 // Method: Process refund (manual refund by admin)

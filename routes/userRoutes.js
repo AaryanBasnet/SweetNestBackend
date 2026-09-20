@@ -19,6 +19,11 @@ const {
 } = require("../controller/userController");
 
 const { protect, admin } = require("../middleware/authMiddleware");
+const {
+  authLimiter,
+  passwordResetRequestLimiter,
+  passwordResetVerifyLimiter,
+} = require("../middleware/rateLimitMiddleware");
 const { validate } = require("../middleware/validateMiddleware");
 const { uploadCakeImages } = require("../middleware/uploadMiddleware");
 const {
@@ -31,17 +36,30 @@ const {
 } = require("../validators/userValidators");
 
 // Public routes
-router.post("/register", validate(registerSchema), registerUser);
-router.post("/login", validate(loginSchema), loginUser);
+// Rate limited: these are the endpoints an attacker can hammer for free -
+// password guessing, email bombing, and brute forcing the 6-digit reset code.
+router.post("/register", authLimiter, validate(registerSchema), registerUser);
+router.post("/login", authLimiter, validate(loginSchema), loginUser);
 
 // Password reset routes (Public)
-router.post("/forgot-password", validate(forgotPasswordSchema), forgotPassword);
+router.post(
+  "/forgot-password",
+  passwordResetRequestLimiter,
+  validate(forgotPasswordSchema),
+  forgotPassword
+);
 router.post(
   "/verify-reset-code",
+  passwordResetVerifyLimiter,
   validate(verifyResetCodeSchema),
   verifyResetCode
 );
-router.post("/reset-password", validate(resetPasswordSchema), resetPassword);
+router.post(
+  "/reset-password",
+  passwordResetVerifyLimiter,
+  validate(resetPasswordSchema),
+  resetPassword
+);
 
 // Protected routes (requires JWT)
 router

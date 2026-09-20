@@ -178,20 +178,45 @@ const getMyReviews = asyncHandler(async (req, res) => {
 // @route   POST /api/reviews/:id/helpful
 // @access  Public
 const markReviewHelpful = asyncHandler(async (req, res) => {
-  const review = await Review.findById(req.params.id);
+  const userId = req.user._id;
 
-  if (!review) {
+  // One vote per user, and voting again takes it back. Both the array and the
+  // denormalised count are updated in a single atomic pipeline, so concurrent
+  // votes cannot lose each other the way read-modify-write would.
+  const updated = await Review.findByIdAndUpdate(
+    req.params.id,
+    [
+      {
+        $set: {
+          helpfulVotes: {
+            $cond: [
+              { $in: [userId, { $ifNull: ['$helpfulVotes', []] }] },
+              { $setDifference: [{ $ifNull: ['$helpfulVotes', []] }, [userId]] },
+              { $concatArrays: [{ $ifNull: ['$helpfulVotes', []] }, [userId]] },
+            ],
+          },
+        },
+      },
+      { $set: { helpfulCount: { $size: '$helpfulVotes' } } },
+    ],
+    // Required by Mongoose when the update is an aggregation pipeline
+    // rather than a plain update document.
+    { new: true, updatePipeline: true }
+  );
+
+  if (!updated) {
     res.status(404);
     throw new Error('Review not found');
   }
 
-  review.helpfulCount += 1;
-  await review.save();
+  const hasVoted = updated.helpfulVotes.some((id) => id.equals(userId));
 
   res.status(200).json({
     success: true,
-    message: 'Review marked as helpful',
-    data: { helpfulCount: review.helpfulCount },
+    message: hasVoted
+      ? 'Review marked as helpful'
+      : 'Helpful vote removed',
+    data: { helpfulCount: updated.helpfulCount, hasVoted },
   });
 });
 

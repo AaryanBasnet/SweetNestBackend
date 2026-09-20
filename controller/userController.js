@@ -14,8 +14,11 @@ const { deleteImage } = require('../config/cloudinary');
 
 // --- Helper: Generate JWT ---
 const generateToken = (id) => {
+  // 30 days was far too long for a token that lives in localStorage with no
+  // refresh or revocation path. 7 days is the compromise until proper
+  // refresh-token rotation lands; override per environment if needed.
   return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: '30d',
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
 };
 
@@ -112,8 +115,7 @@ const createAdmin = asyncHandler(async (req, res) => {
 const loginUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  const user = await User.findOne({ email });
-
+  const user = await User.findOne({ email }).select('+password');
 
   if (user && (await user.matchPassword(password))) {
     res.status(200).json({
@@ -166,7 +168,8 @@ const getUserProfile = asyncHandler(async (req, res) => {
 // @route   PUT /api/users/profile
 // @access  Private
 const updateUserProfile = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id);
+  // +password so we can verify the current one before allowing a change.
+  const user = await User.findById(req.user._id).select('+password');
 
   if (user) {
     // Handle avatar upload to Cloudinary
@@ -196,7 +199,29 @@ const updateUserProfile = asyncHandler(async (req, res) => {
     if (req.body.email) user.email = req.body.email;
     if (req.body.phone !== undefined) user.phone = req.body.phone;
     if (req.body.address !== undefined) user.address = req.body.address;
-    if (req.body.password) user.password = req.body.password;
+    // SECURITY: changing a password requires proving you know the current one.
+    // Without this check, anyone holding a stolen token (30-day JWT sitting in
+    // localStorage) could lock the real owner out of their own account.
+    if (req.body.password) {
+      if (!req.body.currentPassword) {
+        res.status(400);
+        throw new Error('Current password is required to set a new password');
+      }
+
+      const currentIsValid = await user.matchPassword(req.body.currentPassword);
+      if (!currentIsValid) {
+        res.status(401);
+        throw new Error('Current password is incorrect');
+      }
+
+      if (req.body.currentPassword === req.body.password) {
+        res.status(400);
+        throw new Error('New password must be different from the current one');
+      }
+
+      user.password = req.body.password;
+      user.passwordChangedAt = new Date();
+    }
 
     // SECURITY: Role is NOT updated from request body
 
@@ -230,30 +255,34 @@ const forgotPassword = asyncHandler(async (req, res) => {
 
   const user = await User.findOne({ email });
 
-  if (!user) {
-    res.status(404);
-    throw new Error('No account found with this email');
+  // SECURITY: always answer the same way whether or not the account exists.
+  // Returning 404 for unknown emails turned this endpoint into a user
+  // enumeration oracle - an attacker could confirm which emails are registered.
+  if (user) {
+    // Invalidate any code already outstanding for this user
+    await PasswordResetToken.deleteMany({ userId: user._id });
+
+    const resetCode = PasswordResetToken.generateCode();
+
+    await PasswordResetToken.create({
+      userId: user._id,
+      email: user.email,
+      codeHash: PasswordResetToken.hashCode(resetCode),
+    });
+
+    // A mail delivery failure must not change the shape of the response,
+    // that would re-introduce the enumeration leak.
+    try {
+      await sendPasswordResetEmail(user.email, resetCode);
+    } catch (error) {
+      console.error('Failed to send password reset email:', error.message);
+    }
   }
-
-  // Delete any existing reset tokens for this user
-  await PasswordResetToken.deleteMany({ userId: user._id });
-
-  // Generate new reset code
-  const resetCode = PasswordResetToken.generateCode();
-
-  // Save reset token
-  await PasswordResetToken.create({
-    userId: user._id,
-    email,
-    code: resetCode,
-  });
-
-  // Send email
-  await sendPasswordResetEmail(email, resetCode);
 
   res.status(200).json({
     success: true,
-    message: 'Password reset code sent to your email',
+    message:
+      'If an account exists for that email, a password reset code has been sent.',
   });
 });
 
@@ -263,22 +292,34 @@ const forgotPassword = asyncHandler(async (req, res) => {
 const verifyResetCode = asyncHandler(async (req, res) => {
   const { email, code } = req.body;
 
-  const resetToken = await PasswordResetToken.findOne({ email, code });
+  // Look up by email only - the code is stored as an HMAC, so it is compared
+  // in constant time below rather than matched inside the query.
+  const resetToken = await PasswordResetToken.findOne({
+    email: String(email).toLowerCase().trim(),
+  });
 
-  if (!resetToken) {
+  if (!resetToken || resetToken.isExpired()) {
+    if (resetToken) await PasswordResetToken.deleteOne({ _id: resetToken._id });
     res.status(400);
-    throw new Error('Invalid verification code');
+    throw new Error('Invalid or expired verification code');
   }
 
-  // Check if code has expired
-  if (resetToken.expiresAt < new Date()) {
-    await PasswordResetToken.deleteOne({ _id: resetToken._id });
+  if (!resetToken.matchesCode(code)) {
+    // Burn the token after too many wrong guesses, so a 6-digit code cannot be
+    // brute forced by an attacker who rotates IPs past the rate limiter.
+    const exhausted = await resetToken.registerFailedAttempt();
+    if (exhausted) {
+      await PasswordResetToken.deleteOne({ _id: resetToken._id });
+      res.status(400);
+      throw new Error('Too many incorrect attempts. Please request a new code.');
+    }
+
     res.status(400);
-    throw new Error('Verification code has expired. Please request a new one');
+    throw new Error('Invalid or expired verification code');
   }
 
-  // Mark as verified
   resetToken.verified = true;
+  resetToken.attempts = 0;
   await resetToken.save();
 
   res.status(200).json({
@@ -293,35 +334,31 @@ const verifyResetCode = asyncHandler(async (req, res) => {
 const resetPassword = asyncHandler(async (req, res) => {
   const { email, code, newPassword } = req.body;
 
-  // Find verified reset token
   const resetToken = await PasswordResetToken.findOne({
-    email,
-    code,
+    email: String(email).toLowerCase().trim(),
     verified: true,
   });
 
-  if (!resetToken) {
+  if (!resetToken || resetToken.isExpired() || !resetToken.matchesCode(code)) {
+    if (resetToken && resetToken.isExpired()) {
+      await PasswordResetToken.deleteOne({ _id: resetToken._id });
+    }
     res.status(400);
-    throw new Error('Invalid or unverified reset code. Please verify your code first');
+    throw new Error('Invalid or expired reset code. Please request a new one.');
   }
 
-  // Check if code has expired
-  if (resetToken.expiresAt < new Date()) {
-    await PasswordResetToken.deleteOne({ _id: resetToken._id });
-    res.status(400);
-    throw new Error('Reset code has expired. Please request a new one');
-  }
-
-  // Find user and update password
   const user = await User.findById(resetToken.userId);
 
   if (!user) {
-    res.status(404);
-    throw new Error('User not found');
+    res.status(400);
+    throw new Error('Invalid or expired reset code. Please request a new one.');
   }
 
-  // Update password (will be hashed by pre-save hook)
+  // Update password (hashed by the pre-save hook). Stamping passwordChangedAt
+  // invalidates every JWT issued before this moment, so an attacker holding a
+  // stolen token loses access the instant the real owner resets.
   user.password = newPassword;
+  user.passwordChangedAt = new Date();
   await user.save();
 
   // Delete the reset token

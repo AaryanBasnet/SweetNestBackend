@@ -4,37 +4,47 @@ const User = require('../model/User');
 
 // Protect routes (logged-in users only)
 const protect = asyncHandler(async (req, res, next) => {
-  let token;
+  const authHeader = req.headers.authorization;
 
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith('Bearer')
-  ) {
-    try {
-      // Get token from header
-      token = req.headers.authorization.split(' ')[1];
-
-      // Verify token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-      // Get user from token and attach to req, exclude password
-      const user = await User.findById(decoded.id).select('-password');
-
-      if (!user) {
-        res.status(401);
-        throw new Error('User not found');
-      }
-
-      req.user = user;
-      next();
-    } catch (error) {
-      res.status(401);
-      throw new Error('Not authorized, token failed');
-    }
-  } else {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
     res.status(401);
     throw new Error('Not authorized, no token');
   }
+
+  const token = authHeader.split(' ')[1];
+
+  let decoded;
+  try {
+    decoded = jwt.verify(token, process.env.JWT_SECRET);
+  } catch (error) {
+    res.status(401);
+    // Distinguish expiry from tampering so the client can tell "log in again"
+    // apart from "something is wrong", without leaking crypto details.
+    throw new Error(
+      error.name === 'TokenExpiredError'
+        ? 'Session expired, please log in again'
+        : 'Not authorized, token failed'
+    );
+  }
+
+  // NOTE: no try/catch around the lookup. Wrapping it, as the previous version
+  // did, swallowed genuine database errors and reported them as 401s.
+  const user = await User.findById(decoded.id);
+
+  if (!user) {
+    res.status(401);
+    throw new Error('Not authorized, token failed');
+  }
+
+  // Revocation for stateless JWTs: a password change invalidates every token
+  // issued before it, so resetting a password really does kick attackers out.
+  if (user.changedPasswordAfter(decoded.iat)) {
+    res.status(401);
+    throw new Error('Password was changed recently, please log in again');
+  }
+
+  req.user = user;
+  next();
 });
 
 // Admin-only middleware

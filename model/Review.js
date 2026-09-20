@@ -57,7 +57,16 @@ const reviewSchema = new mongoose.Schema(
       default: true, // Auto-approve or set to false for moderation
     },
 
-    // Helpful votes
+    // Who voted. Tracking the voters is what makes the count meaningful:
+    // without it the endpoint is just a counter anyone can increment forever.
+    helpfulVotes: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
+    // Denormalised size of helpfulVotes, kept in sync by the same atomic
+    // update that changes the array. Cheap to read, never drifts.
     helpfulCount: {
       type: Number,
       default: 0,

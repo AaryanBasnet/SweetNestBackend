@@ -56,6 +56,9 @@ const updateProfileSchema = z.object({
       .min(8)
       .regex(passwordRegex, 'Password must include uppercase, lowercase, number, and special character')
       .optional(),
+    // Required by the controller whenever `password` is present. It must be
+    // declared here or Zod strips it from req.body before the controller runs.
+    currentPassword: z.string().min(1).optional(),
   }),
 });
 

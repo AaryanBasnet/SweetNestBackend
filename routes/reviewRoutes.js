@@ -26,7 +26,9 @@ const {
 } = require('../validators/reviewValidators');
 
 // Public routes
-router.post('/:id/helpful', validate(markHelpfulSchema), markReviewHelpful);
+// Requires auth: an anonymous vote cannot be limited to one per person, which
+// made the previous version a free review-ranking lever for anyone.
+router.post('/:id/helpful', protect, validate(markHelpfulSchema), markReviewHelpful);
 
 // Private routes (authenticated users)
 router.get('/my-reviews', protect, getMyReviews);

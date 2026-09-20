@@ -101,6 +101,9 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Password is required'],
       minlength: 8,
+      // Never ship the hash to callers by default. Queries that genuinely need
+      // it (login, password change) must opt in with .select('+password').
+      select: false,
       validate: {
         validator: function (v) {
           // Only validate format if password is being modified (not already hashed)
@@ -119,6 +122,10 @@ const userSchema = new mongoose.Schema(
     address: { type: String, trim: true }, // DEPRECATED: Use addresses array instead
     avatar: { type: String }, // URL to Cloudinary/S3
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
+    // Set whenever the password changes. Tokens issued before this instant are
+    // rejected by the auth middleware, which gives us a revocation story for
+    // otherwise-stateless JWTs.
+    passwordChangedAt: { type: Date },
     isVerified: { type: Boolean, default: false }, // optional email verification
     addresses: {
       type: [addressSchema],
@@ -161,7 +168,25 @@ userSchema.pre('save', async function () {
 
 // Compare password method
 userSchema.methods.matchPassword = async function (enteredPassword) {
+  // Guard against callers that forgot .select('+password') - bcrypt.compare
+  // throws on an undefined hash, which would surface as a 500 instead of a 401.
+  if (!this.password) {
+    throw new Error(
+      'matchPassword called on a user loaded without the password field. ' +
+        "Use .select('+password')."
+    );
+  }
   return await bcrypt.compare(enteredPassword, this.password);
+};
+
+/**
+ * True when the password changed after the given JWT was issued.
+ * iat is in seconds; passwordChangedAt is a Date.
+ */
+userSchema.methods.changedPasswordAfter = function (jwtIssuedAtSeconds) {
+  if (!this.passwordChangedAt) return false;
+  const changedAtSeconds = Math.floor(this.passwordChangedAt.getTime() / 1000);
+  return changedAtSeconds > jwtIssuedAtSeconds;
 };
 
 const User = mongoose.model('User', userSchema);

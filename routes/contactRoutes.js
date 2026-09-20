@@ -16,9 +16,11 @@ const {
 } = require('../controller/contactController');
 
 const { protect, admin } = require('../middleware/authMiddleware');
+const { contactLimiter } = require('../middleware/rateLimitMiddleware');
 
 // --- PUBLIC ROUTES ---
-router.post('/', submitContactForm);
+// Unauthenticated public form, so it is a spam relay without a limit.
+router.post('/', contactLimiter, submitContactForm);
 
 // --- ADMIN ROUTES ---
 router.get('/', protect, admin, getAllContacts);

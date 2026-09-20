@@ -74,20 +74,23 @@ const validateQuery = (schema) => {
 };
 
 /**
- * Shared Error Handler helper
- * Prevents "Cannot read properties of undefined" crashes
+ * Shared Zod error -> HTTP 400 mapper.
+ *
+ * NOTE: Zod v4 exposes issues on `error.issues`. The v3 `error.errors` alias was
+ * removed, so reading `.errors` here silently produced an empty array and every
+ * validation failure came back with no field information.
  */
 const handleZodError = (error, res, next) => {
-  // 1. Log the raw error so you can see it in the terminal
-  console.error(">> Validation Error Caught:", error);
-
   if (error instanceof ZodError) {
-    // 2. Safe mapping (check if errors array exists)
-    const errorList = error.errors || [];
-    
-    const errors = errorList.map((err) => ({
-      field: err.path.join('.'),
-      message: err.message,
+    const errors = error.issues.map((issue) => ({
+      // Strip the leading 'body' / 'params' / 'query' segment added by validate()
+      // so the frontend gets the field name it actually rendered.
+      field: issue.path
+        .filter((segment, index) =>
+          !(index === 0 && ['body', 'params', 'query'].includes(segment))
+        )
+        .join('.'),
+      message: issue.message,
     }));
 
     return res.status(400).json({
@@ -97,12 +100,9 @@ const handleZodError = (error, res, next) => {
     });
   }
 
-  // 3. Handle non-Zod errors (like syntax errors) gracefully
-  return res.status(500).json({
-    success: false,
-    message: 'Internal Server Error during validation',
-    error: error.message
-  });
+  // Not a validation problem - hand it to the central error handler so it gets
+  // logged and formatted like any other unexpected failure.
+  return next(error);
 };
 
 module.exports = {
