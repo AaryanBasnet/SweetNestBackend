@@ -80,6 +80,28 @@ jobs:
   docker:
     name: Docker image builds
     runs-on: ubuntu-latest
+
+    # Job level, not step level.
+    #
+    # docker-compose.yml marks JWT_SECRET as a required variable, and Compose
+    # resolves it before doing anything else. It reads the value from either
+    # the shell environment or a .env file. .env is gitignored, so on a runner
+    # the environment is the only source.
+    #
+    # Scoping this to the smoke-test step alone left "Show logs on failure" and
+    # "Tear down" without it - and "Tear down" runs if: always(), so it failed
+    # on every run and turned the job red even when the smoke test passed.
+    # ESEWA_SECRET_KEY is here for a different reason. The container runs with
+    # NODE_ENV=production, and esewaController refuses to load in production
+    # without real gateway credentials - a deliberate guard, so a misconfigured
+    # deploy cannot serve traffic with a payment gateway it cannot sign for.
+    # The smoke test only proves the stack boots and talks to MongoDB, so a
+    # placeholder is correct here; it never reaches eSewa.
+    env:
+      JWT_SECRET: ci-smoke-test-secret-not-used-anywhere-real
+      ESEWA_MERCHANT_ID: EPAYTEST
+      ESEWA_SECRET_KEY: ci-smoke-test-esewa-key-not-used-anywhere-real
+
     steps:
       - uses: actions/checkout@v4
 
@@ -101,16 +123,29 @@ jobs:
       # well as the image: service networking, the healthcheck, and the
       # depends_on condition that makes the API wait for Mongo.
       - name: Smoke test the compose stack
-        env:
-          JWT_SECRET: ci-smoke-test-secret-not-used-anywhere-real
         run: |
+          set -euo pipefail
+
+          # Fail here with a readable message rather than inside Compose's
+          # interpolation error, which is harder to diagnose.
+          test -n "$JWT_SECRET"
+
+          # Resolves the compose file without starting anything, so an
+          # interpolation or syntax problem surfaces before containers are
+          # involved.
+          docker compose config >/dev/null
+
           docker compose up -d --wait --wait-timeout 120
 
-          echo 'Containers:'
           docker compose ps
 
-          curl -fsS http://127.0.0.1:5000/health | tee /dev/stderr | grep -q '"status":"ok"'
-          curl -fsS http://127.0.0.1:5000/ready  | tee /dev/stderr | grep -q '"database":"connected"'
+          curl -fsS http://127.0.0.1:5000/health \
+            | tee /dev/stderr \
+            | grep -q '"status":"ok"'
+
+          curl -fsS http://127.0.0.1:5000/ready \
+            | tee /dev/stderr \
+            | grep -q '"database":"connected"'
 
           echo 'API is up and talking to MongoDB.'
 

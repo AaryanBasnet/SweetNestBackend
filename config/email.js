@@ -20,7 +20,15 @@ const transporter = nodemailer.createTransport({
 if (process.env.NODE_ENV !== "test") {
   transporter.verify((error) => {
     if (error) {
-      logger.error({ err: error }, "Email configuration error");
+      // warn, not error: an unconfigured or unreachable mail server is a
+      // degraded feature, not a broken application - the API serves every
+      // other request fine. Logging it at error level would page someone
+      // over an environment that simply has no SMTP credentials, and would
+      // train them to ignore the level that does matter.
+      logger.warn(
+        { err: error },
+        "Email is not configured or unreachable - password reset emails will fail"
+      );
 
     } else {
       logger.info("Email server is ready to send messages");
