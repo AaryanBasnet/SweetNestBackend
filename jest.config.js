@@ -37,6 +37,7 @@ module.exports = {
 
   collectCoverageFrom: [
     "controller/**/*.js",
+    "services/**/*.js",
     "middleware/**/*.js",
     "model/**/*.js",
     "utils/**/*.js",
@@ -82,6 +83,25 @@ module.exports = {
     "./controller/userController.js": {
       statements: 70,
       lines: 70,
+    },
+    // The pricing and discount rules decide what a customer is charged. Two
+    // live bugs came from those rules being scattered; now that they live in
+    // one place, they are held near total coverage.
+    "./services/pricingService.js": {
+      statements: 95,
+      branches: 85,
+      functions: 100,
+      lines: 95,
+    },
+    "./services/discountService.js": {
+      statements: 95,
+      branches: 95,
+      functions: 100,
+      lines: 95,
+    },
+    "./services/orderService.js": {
+      statements: 85,
+      lines: 85,
     },
   },
 

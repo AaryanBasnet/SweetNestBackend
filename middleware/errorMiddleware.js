@@ -20,7 +20,12 @@ const notFound = (req, res, next) => {
  * middleware that never runs.
  */
 const errorHandler = (err, req, res, next) => {
-  const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
+  // An AppError carries its own status, which is the reliable source: it
+  // travels with the error itself rather than depending on a controller
+  // having remembered to set res.status() before throwing. Fall back to the
+  // response status for the older controllers that still do it that way.
+  const statusCode =
+    err.statusCode || (res.statusCode === 200 ? 500 : res.statusCode);
 
   // Prefer the per-request child logger (it carries the request id) and fall
   // back to the base logger if the request never reached pino-http.

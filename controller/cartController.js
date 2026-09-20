@@ -6,7 +6,8 @@
 const asyncHandler = require('express-async-handler');
 const Cart = require('../model/Cart');
 const Cake = require('../model/Cake');
-const Coupon = require('../model/Coupon');
+const discountService = require('../services/discountService');
+const { notFound } = require('../utils/AppError');
 
 // @desc    Get user's cart
 // @route   GET /api/cart
@@ -365,108 +366,39 @@ const updateDeliveryType = asyncHandler(async (req, res) => {
 // @route   POST /api/cart/promo
 // @access  Private
 const applyPromoCode = asyncHandler(async (req, res) => {
-  const { code } = req.body;
-
-  if (!code) {
-    res.status(400);
-    throw new Error('Promo code is required');
-  }
-
   const cart = await Cart.findOne({ user: req.user._id });
 
   if (!cart) {
-    res.status(404);
-    throw new Error('Cart not found');
+    throw notFound('Cart not found');
   }
 
-  const codeUpper = code.toUpperCase();
-
-  // First check if it's a user's earned coupon
-  const coupon = await Coupon.findOne({
-    code: codeUpper,
-    user: req.user._id,
+  // Everything about which codes exist, who may use them, whether they have
+  // expired and what the order must be worth now lives in one service. This
+  // handler's job is only to fetch the cart, apply the answer, and reply.
+  const discount = await discountService.resolveDiscountCode({
+    code: req.body.code,
+    userId: req.user._id,
+    subtotal: cart.subtotal,
   });
 
-  if (coupon) {
-    // Validate coupon
-    if (coupon.isUsed) {
-      res.status(400);
-      throw new Error('This coupon has already been used');
-    }
-
-    if (new Date(coupon.expiresAt) <= new Date()) {
-      res.status(400);
-      throw new Error('This coupon has expired');
-    }
-
-    // Check minimum order amount
-    if (cart.subtotal < coupon.minOrderAmount) {
-      res.status(400);
-      throw new Error(
-        `Minimum order amount of Rs. ${coupon.minOrderAmount} required for this coupon`
-      );
-    }
-
-    // Apply coupon
-    cart.promoCode = {
-      code: coupon.code,
-      discount: coupon.discountValue,
-      discountType: coupon.discountType,
-      maxDiscount: coupon.maxDiscount,
-      couponId: coupon._id,
-    };
-
-    await cart.save();
-
-    return res.status(200).json({
-      success: true,
-      message: 'Coupon applied successfully',
-      data: {
-        promoCode: cart.promoCode.code,
-        discountAmount: cart.discountAmount,
-        total: cart.total,
-        isCoupon: true,
-      },
-    });
-  }
-
-  // If not a coupon, check regular promo codes
-  const promoCodes = {
-    SWEET10: { discount: 10, discountType: 'percentage', minOrder: 500 },
-    FLAT50: { discount: 50, discountType: 'fixed', minOrder: 1000 },
-    WELCOME20: { discount: 20, discountType: 'percentage', minOrder: 800, maxDiscount: 200 },
-  };
-
-  const promo = promoCodes[codeUpper];
-
-  if (!promo) {
-    res.status(400);
-    throw new Error('Invalid promo code');
-  }
-
-  // Check minimum order amount for promo code
-  if (cart.subtotal < promo.minOrder) {
-    res.status(400);
-    throw new Error(`Minimum order amount of Rs. ${promo.minOrder} required for this promo code`);
-  }
-
   cart.promoCode = {
-    code: codeUpper,
-    discount: promo.discount,
-    discountType: promo.discountType,
-    maxDiscount: promo.maxDiscount,
+    code: discount.code,
+    discount: discount.discount,
+    discountType: discount.discountType,
+    maxDiscount: discount.maxDiscount,
+    couponId: discount.couponId,
   };
 
   await cart.save();
 
   res.status(200).json({
     success: true,
-    message: 'Promo code applied',
+    message: discount.isCoupon ? 'Coupon applied successfully' : 'Promo code applied',
     data: {
       promoCode: cart.promoCode.code,
       discountAmount: cart.discountAmount,
       total: cart.total,
-      isCoupon: false,
+      isCoupon: discount.isCoupon,
     },
   });
 });

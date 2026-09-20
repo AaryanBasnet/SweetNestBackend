@@ -5,150 +5,26 @@
 
 const asyncHandler = require("express-async-handler");
 const Order = require("../model/Order");
-const Cart = require("../model/Cart");
 const {
   getPaginationOptions,
   buildPaginationMeta,
 } = require("../utils/pagination");
 const { awardPoints } = require("./rewardsController");
+const orderService = require("../services/orderService");
 const logger = require("../config/logger");
 
 // @desc    Create new order from cart
 // @route   POST /api/orders
 // @access  Private
 const createOrder = asyncHandler(async (req, res) => {
-  const userId = req.user._id;
-
-  // Get user's cart with populated cake data
-  const cart = await Cart.findOne({ user: userId }).populate({
-    path: "items.cake",
-    select: "name images slug",
-  });
-
-  if (!cart || cart.items.length === 0) {
-    res.status(400);
-    throw new Error("Your cart is empty");
-  }
-
-  const {
-    contactEmail,
-    shippingAddress,
-    deliverySchedule,
-    specialRequests,
-    subscribeNewsletter,
-    paymentMethod,
-  } = req.body;
-
-  // Generate unique order number
-  const orderNumber = await Order.generateOrderNumber();
-
-  // Build order items from cart
-  const orderItems = cart.items.map((item) => {
-    // Check if this is a custom cake (stored locally, not in database)
-    const isCustomCake = !item.cake || !item.cake._id;
-
-    if (isCustomCake) {
-      // Handle custom cake order item
-      return {
-        cake: null, // No database reference
-        name: item.customization?.name || `Custom ${item.customization?.flavor} Cake`,
-        image: item.customization?.previewImage || "",
-        quantity: item.quantity,
-        weight: {
-          weightInKg: item.selectedWeight.weightInKg,
-          label: item.selectedWeight.label || `${item.selectedWeight.weightInKg}kg`,
-          price: item.selectedWeight.price,
-        },
-        isCustom: true,
-        customizations: [
-          {
-            name: "Custom Cake Design",
-            details: {
-              tiers: item.customization?.tiers,
-              size: item.customization?.size,
-              flavor: item.customization?.flavor,
-              frostingColor: item.customization?.color,
-              frostingColorHex: item.customization?.frostingColorHex,
-              topper: item.customization?.topper,
-              topperPrice: item.customization?.topperPrice || 0,
-              message: item.customization?.message || "",
-            },
-            priceAdjustment: item.customization?.topperPrice || 0,
-          },
-        ],
-        itemTotal: item.selectedWeight.price * item.quantity,
-      };
-    }
-
-    // Handle regular cake order item
-    return {
-      cake: item.cake._id,
-      name: item.cake.name,
-      image: item.cake.images?.[0]?.url || "",
-      quantity: item.quantity,
-      weight: {
-        weightInKg: item.selectedWeight.weightInKg,
-        label: item.selectedWeight.label,
-        price: item.selectedWeight.price,
-      },
-      isCustom: false,
-      customizations: item.customization
-        ? [
-            {
-              name: "Custom Message",
-              selectedOption: item.customization.message || "",
-              priceAdjustment: 0,
-            },
-          ]
-        : [],
-      itemTotal: item.selectedWeight.price * item.quantity,
-    };
-  });
-
-  // Calculate totals
-  const subtotal = cart.subtotal;
-  const shipping = cart.shipping;
-  const discount = cart.discountAmount;
-  const total = cart.total;
-
-  // Create order
-  const order = await Order.create({
-    orderNumber,
-    user: userId,
-    items: orderItems,
-    shippingAddress,
-    contactEmail,
-    deliverySchedule: {
-      date: new Date(deliverySchedule.date),
-      timeSlot: deliverySchedule.timeSlot,
-    },
-    specialRequests,
-    subscribeNewsletter,
-    paymentMethod,
-    paymentStatus: paymentMethod === "cod" ? "pending" : "pending",
-    orderStatus: paymentMethod === "cod" ? "confirmed" : "pending",
-    subtotal,
-    shipping,
-    discount,
-    total,
-    promoCode: cart.promoCode || null,
-  });
-
-  // Clear the cart after successful order creation
-  // If it is 'esewa', we wait until payment success in esewaController
-  if (paymentMethod === "cod") {
-    await Cart.findOneAndUpdate(
-      { user: userId },
-      { items: [], promoCode: null }
-    );
-  }
-
-  // Populate for response
-  await order.populate("user", "name email");
+  // The handler does three things: take the request apart, call the service,
+  // and shape the reply. Every rule about what an order costs and what
+  // happens to the cart and the coupon lives in orderService.
+  const order = await orderService.createOrderFromCart(req.user._id, req.body);
 
   res.status(201).json({
     success: true,
-    message: "Order created successfully",
+    message: 'Order created successfully',
     data: order,
   });
 });
