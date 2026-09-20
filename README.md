@@ -250,6 +250,84 @@ await request(app).post('/api/cart').set(auth(token)).send({ ... });
 
 ---
 
+## 🐳 Running with Docker
+
+```bash
+cp .env.example .env     # fill in JWT_SECRET at minimum
+docker compose up --build
+```
+
+That starts MongoDB and the API together, seeds the hero cakes, and serves on
+http://localhost:5000. No local MongoDB install required.
+
+```bash
+docker compose logs -f api   # follow the API logs
+docker compose down          # stop, keeping the database
+docker compose down -v       # stop and wipe the database volume
+```
+
+A few decisions worth knowing about:
+
+* **Multi-stage build.** Dependencies install in their own stage keyed on
+  `package-lock.json`, so editing a controller does not trigger a reinstall.
+  Dev dependencies never reach the shipped image.
+* **Runs as the `node` user, not root.** A container escape starting as root
+  on the host is not a risk worth accepting for a web API.
+* **`dumb-init` is PID 1.** Node running as PID 1 gets no default signal
+  handlers, so `docker stop` would be ignored until the timeout and then
+  SIGKILL - cutting the graceful shutdown off mid-request.
+* **`depends_on` waits for a healthcheck**, not merely for the container to
+  exist. Otherwise the API starts first, finds no database, and the fail-fast
+  startup check exits.
+* **Service names are hostnames.** The API reaches Mongo at
+  `mongodb://mongo:27017`. Inside a container, `localhost` means that
+  container.
+
+---
+
+## 📊 Logging
+
+Structured JSON logging via **pino**. Not console.log, because once deployed
+logs are read by a machine before a human sees them - you search, filter and
+alert on them, and you cannot query across sentences.
+
+```
+{"level":"info","time":"...","reqId":"a1b2","orderId":"...","msg":"payment settled"}
+```
+
+In development `pino-pretty` renders that back into readable coloured text.
+
+**Request IDs.** Every request gets one (`x-request-id`, reused if a proxy
+already set it) and it is attached to every line logged during that request,
+including the error response body. When a customer reports a failure you can
+pull every line for their exact request out of thousands.
+
+**Redaction.** Authorization headers, cookies, passwords, tokens and signatures
+are replaced with `[Redacted]` before anything is written. Logs get shipped to
+third parties and pasted into chat threads; a credential in a log line has a
+very long tail.
+
+**Levels.** 5xx logs at error, 4xx at warn (a rejected login is the API working,
+not a fault), health checks are not logged at all. Set `LOG_LEVEL` to override.
+
+---
+
+## 🚨 Error tracking
+
+**Sentry**, entirely opt-in. With no `SENTRY_DSN` set the SDK is never
+initialised and every call is a no-op, so the app runs identically without an
+account.
+
+Only 5xx responses are reported - sending 4xx too would bury real defects under
+validation failures and wrong passwords. Request bodies, cookies and auth
+headers are stripped before any event leaves the process.
+
+To enable: create a free project at sentry.io, put the DSN in `SENTRY_DSN`,
+redeploy. Set `SENTRY_RELEASE` to the commit SHA in CI to tie each error to
+the deploy that caused it.
+
+---
+
 ## 🔄 Continuous Integration
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull

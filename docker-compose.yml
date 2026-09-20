@@ -1,0 +1,68 @@
+# =============================================================================
+# SweetNest API + MongoDB
+#
+#   docker compose up --build
+#
+# Brings up the database and the API together, with no local MongoDB install
+# required. "Clone the repo and run one command" is the bar a project should
+# meet - a README with twelve setup steps is where contributors give up.
+# =============================================================================
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      # Exposed so you can point Compass or mongosh at it while developing.
+      # Remove this line in any deployment - a database does not belong on a
+      # public port.
+      - "27017:27017"
+    volumes:
+      # Named volume, so data survives `docker compose down`. It does NOT
+      # survive `docker compose down -v`, which is how you get a clean slate.
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1})"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${PORT:-5000}:5000"
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      # "mongo" is the service name above. Compose runs a DNS server on the
+      # shared network, so containers reach each other by service name.
+      # localhost inside a container means that container, not the host.
+      DB_URL: mongodb://mongo:27017/SweetNestDatabase
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required - copy .env.example to .env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      RESET_CODE_SECRET: ${RESET_CODE_SECRET:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      BACKEND_URL: ${BACKEND_URL:-http://localhost:5000}
+      CORS_EXTRA_ORIGINS: ${CORS_EXTRA_ORIGINS:-}
+      ESEWA_MERCHANT_ID: ${ESEWA_MERCHANT_ID:-EPAYTEST}
+      ESEWA_SECRET_KEY: ${ESEWA_SECRET_KEY:-}
+      EMAIL_USER: ${EMAIL_USER:-}
+      EMAIL_APP_PASSWORD: ${EMAIL_APP_PASSWORD:-}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    depends_on:
+      mongo:
+        # Waits for mongo's healthcheck to pass, not merely for the container
+        # to exist. Without this the API starts first, finds no database, and
+        # the fail-fast startup check exits.
+        condition: service_healthy
+
+volumes:
+  mongo-data:
