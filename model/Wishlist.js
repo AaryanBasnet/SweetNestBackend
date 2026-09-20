@@ -46,7 +46,7 @@ const wishlistSchema = new mongoose.Schema(
 );
 
 // Index for faster queries
-wishlistSchema.index({ user: 1 });
+// NOTE: `unique: true` on `user` already creates this index.
 
 const Wishlist = mongoose.model('Wishlist', wishlistSchema);
 

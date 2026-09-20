@@ -12,15 +12,20 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// Verify connection configuration
-transporter.verify((error, success) => {
-  if (error) {
-    console.log("Email configuration error:", error.message);
-    
-  } else {
-    console.log("Email server is ready to send messages");
-  }
-});
+// Verify connection configuration.
+// Skipped under test: this opens a real SMTP socket at import time, which
+// makes the test run depend on the network and leaves a handle open that
+// prevents the process from exiting.
+if (process.env.NODE_ENV !== "test") {
+  transporter.verify((error) => {
+    if (error) {
+      console.log("Email configuration error:", error.message);
+
+    } else {
+      console.log("Email server is ready to send messages");
+    }
+  });
+}
 
 // Send password reset email
 const sendPasswordResetEmail = async (email, resetCode) => {

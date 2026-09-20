@@ -174,9 +174,9 @@ const getMyReviews = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Mark review as helpful
+// @desc    Toggle "helpful" on a review (one vote per user)
 // @route   POST /api/reviews/:id/helpful
-// @access  Public
+// @access  Private
 const markReviewHelpful = asyncHandler(async (req, res) => {
   const userId = req.user._id;
 
@@ -201,7 +201,7 @@ const markReviewHelpful = asyncHandler(async (req, res) => {
     ],
     // Required by Mongoose when the update is an aggregation pipeline
     // rather than a plain update document.
-    { new: true, updatePipeline: true }
+    { returnDocument: 'after', updatePipeline: true }
   );
 
   if (!updated) {

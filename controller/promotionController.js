@@ -83,13 +83,14 @@ const createPromotion = asyncHandler(async (req, res) => {
   if (linkedCakes && typeof linkedCakes === 'string') {
     try {
       linkedCakes = JSON.parse(linkedCakes);
-    } catch (e) {
+    } catch (_e) {
+      // Not JSON - treat as "no linked cakes" rather than failing the request.
       linkedCakes = [];
     }
   }
 
   // Process uploaded images
-  let uploadedImages = [];
+  let uploadedImages;
   if (req.files && req.files.length > 0) {
     uploadedImages = await processAndUploadFiles(req.files, 'promotions');
   } else {

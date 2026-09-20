@@ -112,7 +112,8 @@ cartSchema.virtual('itemCount').get(function () {
 });
 
 // Index for faster queries
-cartSchema.index({ user: 1 });
+// NOTE: no explicit index on `user` - `unique: true` on the field already
+// creates one. Declaring both makes Mongoose warn about a duplicate index.
 
 const Cart = mongoose.model('Cart', cartSchema);
 

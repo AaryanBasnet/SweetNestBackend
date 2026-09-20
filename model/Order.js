@@ -246,7 +246,7 @@ const orderSchema = new mongoose.Schema(
 
 // Indexes for better query performance
 orderSchema.index({ user: 1, createdAt: -1 });
-orderSchema.index({ orderNumber: 1 });
+// NOTE: `unique: true` on `orderNumber` already creates this index.
 orderSchema.index({ orderStatus: 1 });
 orderSchema.index({ paymentStatus: 1 });
 orderSchema.index({ createdAt: -1 });
@@ -393,7 +393,8 @@ orderSchema.statics.markPaidOnce = function (orderId, paymentDetails = {}) {
     ],
     // updatePipeline is required by Mongoose when the update is an
     // aggregation pipeline rather than a plain update document.
-    { new: true, updatePipeline: true }
+    // returnDocument: 'after' replaces the deprecated .
+    { returnDocument: 'after', updatePipeline: true }
   );
 };
 
@@ -405,7 +406,7 @@ orderSchema.statics.markPaymentFailed = function (orderId) {
   return this.findOneAndUpdate(
     { _id: orderId, paymentStatus: { $nin: ['paid', 'refunded'] } },
     { $set: { paymentStatus: 'failed' } },
-    { new: true }
+    { returnDocument: 'after' }
   );
 };
 

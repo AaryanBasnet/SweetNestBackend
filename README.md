@@ -72,8 +72,12 @@ SweetNestBackend/
 ├── middleware/     # Auth, error handling, guards
 ├── validators/     # Zod validation schemas
 ├── utils/          # Helper utilities
-├── app.js          # Express app setup
-├── server.js       # Server entry point
+├── tests/          # Jest + Supertest suite
+│   ├── setup/      # DB lifecycle, test env, isolation
+│   ├── helpers/    # Test data factories
+│   └── mocks/      # Stubs (email)
+├── app.js          # Express app (exported, no listen - testable)
+├── server.js       # Process entry: config, DB, listen, shutdown
 └── package.json
 ```
 
@@ -161,12 +165,110 @@ Main API modules:
 
 ---
 
+## 🧪 Testing
+
+```bash
+npm test              # run the suite
+npm run test:watch    # re-run on change
+npm run test:coverage # with a coverage report
+npm run lint          # eslint
+```
+
+**147 tests** covering authentication, password reset, the auth middleware,
+cart pricing, order creation and ownership, eSewa payments, review voting and
+rate limiting.
+
+### How the database works in tests
+
+Tests run against a **real MongoDB**, not a mock. Mocking the database would
+let query bugs - a wrong operator, a condition that does not do what you think
+- pass the suite, which is exactly the class of bug these tests exist to catch.
+
+* **Locally**: `tests/setup/globalSetup.js` starts an ephemeral in-memory
+  `mongod` (via `mongodb-memory-server`). Nothing to install or configure.
+* **In CI**: a `mongo:7` service container is used instead, via the
+  `MONGO_TEST_URI` environment variable.
+
+Every test starts against empty collections (`tests/setup/jest.setup.js`), so
+no test can depend on another one's leftovers.
+
+### Pinned dependency: `mongodb` < 7.6.0
+
+`package.json` carries an `overrides` entry pinning the MongoDB driver:
+
+```json
+"overrides": { "mongodb": "<7.6.0" }
+```
+
+**Why:** driver `7.6.0` drops the `driver` sub-document from the client
+handshake metadata when running inside Jest, and the server rejects the
+connection with:
+
+```
+MongooseServerSelectionError: Missing required sub-document 'driver'
+in the client metadata document
+```
+
+It reproduces on a bare Jest config with no project setup involved, and it
+does **not** happen outside Jest - the same connection works in a plain Node
+script. Driver `7.5.0` and below are unaffected.
+
+The range (rather than an exact pin) still allows 7.5.x patch releases.
+Remove the override once a 7.6.x release fixes the handshake, and re-run the
+suite to confirm.
+
+### Coverage
+
+Thresholds are a **ratchet, not a target** - set just below current levels so
+a drop fails the build. Payment and authentication code is held to a much
+higher bar than the codebase average, because that is where a regression
+actually costs something:
+
+| Area | Statements |
+| --- | --- |
+| `controller/esewaController.js` | 90% |
+| `middleware/authMiddleware.js` | 100% |
+| `middleware/rateLimitMiddleware.js` | 100% |
+| `controller/userController.js` | 74% |
+
+Analytics, notifications, promotions and wishlist are not yet covered - that
+is the next area to pick up.
+
+### Writing a test
+
+Use the factories in `tests/helpers/factories.js` rather than assembling
+documents by hand:
+
+```js
+const { createUser, createCake, auth } = require('./helpers/factories');
+
+const { user, token } = await createUser();
+const cake = await createCake();
+
+await request(app).post('/api/cart').set(auth(token)).send({ ... });
+```
+
+---
+
+## 🔄 Continuous Integration
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull
+request:
+
+* **Lint** – `eslint`
+* **Test** – full suite on Node 20 and 22, against a MongoDB service container
+* **Audit** – fails on any high or critical dependency advisory
+
+---
+
 ## 🧪 Development Notes
 
 * Validation is enforced at the API boundary using **Zod**
 * JWT middleware protects authenticated & admin-only routes
 * Business logic is isolated in controllers
 * Sensitive operations are guarded with role checks
+* `app.js` exports the Express app without listening; `server.js` owns the
+  process. That split is what lets Supertest drive the API in memory.
 
 ---
 

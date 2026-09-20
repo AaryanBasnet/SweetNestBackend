@@ -3,7 +3,12 @@ const parseJsonBody = (req, res, next) => {
   
   fields.forEach(field => {
     if (req.body[field] && typeof req.body[field] === 'string') {
-      try { req.body[field] = JSON.parse(req.body[field]); } catch (e) {}
+      try {
+        req.body[field] = JSON.parse(req.body[field]);
+      } catch (_e) {
+        // Leave the raw string in place: multipart form fields are not always
+        // JSON, and the route's Zod schema is what decides if it is valid.
+      }
     }
   });
 
