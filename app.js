@@ -33,6 +33,7 @@ const contactRoutes = require("./routes/contactRoutes");
 
 const { errorHandler, notFound } = require("./middleware/errorMiddleware");
 const { apiLimiter } = require("./middleware/rateLimitMiddleware");
+const requestLogger = require("./middleware/requestLogger");
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -43,6 +44,10 @@ const app = express();
 // 1 = trust one hop. Do not use `true` - it lets a client spoof
 // X-Forwarded-For and walk straight around the rate limiter.
 app.set("trust proxy", 1);
+
+// Request logging first, so even requests rejected by later middleware
+// (CORS, rate limit, body size) still get a log line with a request id.
+app.use(requestLogger);
 
 // Security headers (CSP, HSTS, X-Frame-Options, nosniff, ...).
 app.use(helmet());

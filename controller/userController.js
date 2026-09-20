@@ -11,6 +11,7 @@ const { sendPasswordResetEmail } = require('../config/email');
 const jwt = require('jsonwebtoken');
 const { processAndUploadSingleFile } = require('../middleware/uploadMiddleware');
 const { deleteImage } = require('../config/cloudinary');
+const logger = require('../config/logger');
 
 // --- Helper: Generate JWT ---
 const generateToken = (id) => {
@@ -184,7 +185,10 @@ const updateUserProfile = asyncHandler(async (req, res) => {
           const publicId = `sweetnest/${folder}/${filename}`;
           await deleteImage(publicId);
         } catch (error) {
-          console.error('Error deleting old avatar:', error);
+          logger.warn(
+            { err: error, userId: user._id },
+            'Could not delete previous avatar from Cloudinary'
+          );
           // Continue with upload even if delete fails
         }
       }
@@ -275,7 +279,10 @@ const forgotPassword = asyncHandler(async (req, res) => {
     try {
       await sendPasswordResetEmail(user.email, resetCode);
     } catch (error) {
-      console.error('Failed to send password reset email:', error.message);
+      logger.error(
+        { err: error, email: user.email },
+        'Failed to send password reset email'
+      );
     }
   }
 

@@ -1,4 +1,5 @@
 const nodemailer = require("nodemailer");
+const logger = require("./logger");
 
 // Create transporter with Gmail SMTP
 const transporter = nodemailer.createTransport({
@@ -19,10 +20,10 @@ const transporter = nodemailer.createTransport({
 if (process.env.NODE_ENV !== "test") {
   transporter.verify((error) => {
     if (error) {
-      console.log("Email configuration error:", error.message);
+      logger.error({ err: error }, "Email configuration error");
 
     } else {
-      console.log("Email server is ready to send messages");
+      logger.info("Email server is ready to send messages");
     }
   });
 }

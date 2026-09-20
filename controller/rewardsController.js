@@ -4,6 +4,7 @@
  */
 
 const asyncHandler = require('express-async-handler');
+const logger = require('../config/logger');
 const User = require('../model/User');
 const Coupon = require('../model/Coupon');
 const Order = require('../model/Order');
@@ -65,7 +66,7 @@ exports.getUserPoints = asyncHandler(async (req, res) => {
  * @access  Private
  */
 exports.redeemPoints = asyncHandler(async (req, res) => {
-  console.log("--- REDEEM START ---");
+  logger.debug("Points redemption started");
   const { tierId } = req.body;
   
   // 1. Validate Input
@@ -80,7 +81,7 @@ exports.redeemPoints = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error('Invalid reward tier');
   }
-  console.log("Tier found:", tier.name);
+  logger.debug({ tier: tier.name }, "Reward tier resolved");
 
   // 3. Get User
   const user = await User.findById(req.user._id);
@@ -88,7 +89,10 @@ exports.redeemPoints = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('User not found');
   }
-  console.log("User found:", user._id, "Points:", user.sweetPoints);
+  logger.debug(
+    { userId: user._id, points: user.sweetPoints },
+    "User points balance read"
+  );
 
   // 4. Check Balance
   if (user.sweetPoints < tier.pointsCost) {
@@ -100,7 +104,7 @@ exports.redeemPoints = asyncHandler(async (req, res) => {
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + tier.validityDays);
 
-  console.log("Creating Coupon Object...");
+  logger.debug("Creating coupon");
 
   try {
     // 6. Create Coupon (Model will auto-generate 'code' via pre-save hook)
@@ -118,7 +122,7 @@ exports.redeemPoints = asyncHandler(async (req, res) => {
       expiresAt,
     });
     
-    console.log("Coupon Created Successfully:", coupon.code);
+    logger.info({ couponCode: coupon.code, userId: user._id }, "Coupon created");
 
     // 7. Deduct Points & Update History
     user.sweetPoints -= tier.pointsCost;
@@ -134,7 +138,7 @@ exports.redeemPoints = asyncHandler(async (req, res) => {
     });
 
     await user.save();
-    console.log("User Points Updated.");
+    logger.debug({ userId: user._id }, "User points updated");
 
     // 8. Send Response
     res.status(201).json({
@@ -156,18 +160,23 @@ exports.redeemPoints = asyncHandler(async (req, res) => {
     });
 
   } catch (error) {
-    console.log("!!! REDEEM CRASH !!!");
-    console.log("Error Name:", error.name);
-    console.log("Error Message:", error.message);
-    
-    // Check for Mongoose Validation Errors
-    if (error.errors) {
-       console.log("Validation Details:", JSON.stringify(error.errors, null, 2));
-    }
-    
-    res.status(500).json({ 
-        message: "Redemption Failed", 
-        error: error.message 
+    // One structured line instead of four loose ones. `err` is a field pino
+    // serializes specially - it keeps the name, message and stack together,
+    // so the whole failure is searchable as a single record.
+    logger.error(
+      {
+        err: error,
+        userId: req.user && req.user._id,
+        validationErrors: error.errors
+          ? Object.keys(error.errors)
+          : undefined,
+      },
+      "Points redemption failed"
+    );
+
+    res.status(500).json({
+        message: "Redemption Failed",
+        error: error.message
     });
   }
 });
@@ -276,7 +285,7 @@ exports.awardPoints = async (userId, orderId, orderAmount) => {
   try {
     const user = await User.findById(userId);
     if (!user) {
-      console.error('User not found for awarding points');
+      logger.error({ userId }, 'Cannot award points - user not found');
       return { success: false };
     }
 
@@ -303,10 +312,10 @@ exports.awardPoints = async (userId, orderId, orderAmount) => {
 
     await user.save();
 
-    console.log(`Awarded ${pointsEarned} points to user ${userId}`);
+    logger.info({ userId, pointsEarned }, 'Awarded reward points');
     return { success: true, pointsEarned };
   } catch (error) {
-    console.error('Error awarding points:', error);
+    logger.error({ err: error, userId }, 'Failed to award reward points');
     return { success: false, error: error.message };
   }
 };
