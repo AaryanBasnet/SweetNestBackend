@@ -16,6 +16,7 @@ const asyncHandler = require("express-async-handler");
 const crypto = require("crypto");
 const Order = require("../model/Order");
 const Cart = require("../model/Cart");
+const logger = require("../config/logger");
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -151,21 +152,23 @@ const settleOrder = async (order) => {
   // Could not reach eSewa. Leave the order alone: marking it failed here could
   // cancel an order the customer actually paid for.
   if (!result.ok) {
-    console.error(
-      "eSewa status check failed for " + transactionUuid + ": " + result.reason
+    logger.error(
+      { transactionUuid, orderId: order._id, reason: result.reason },
+      "eSewa status check failed"
     );
     return "unverified";
   }
 
   if (result.status === "COMPLETE") {
     if (!amountsMatch(result.totalAmount, order.total)) {
-      console.error(
-        "eSewa amount mismatch for " +
-          transactionUuid +
-          ": eSewa reported " +
-          result.totalAmount +
-          ", order total is " +
-          order.total
+      logger.error(
+        {
+          transactionUuid,
+          orderId: order._id,
+          reportedAmount: result.totalAmount,
+          expectedAmount: order.total,
+        },
+        "eSewa amount mismatch - refusing to settle"
       );
       return "failed";
     }
@@ -325,7 +328,10 @@ const verifyPayment = asyncHandler(async (req, res) => {
   );
 
   if (!signaturesMatch(signature, expectedSignature)) {
-    console.error("eSewa signature verification failed for " + transactionUuid);
+    logger.warn(
+      { transactionUuid },
+      "eSewa signature verification failed - payload rejected"
+    );
     return redirectToCheckout(res, {
       status: "error",
       message: "Payment verification failed",
@@ -337,7 +343,7 @@ const verifyPayment = asyncHandler(async (req, res) => {
   });
 
   if (!order) {
-    console.error("Order not found for transaction: " + transactionUuid);
+    logger.error({ transactionUuid }, "No order matches eSewa transaction");
     return redirectToCheckout(res, {
       status: "error",
       message: "Order not found",
@@ -398,7 +404,10 @@ const handleFailure = asyncHandler(async (req, res) => {
       }
     }
   } else if (orderId) {
-    console.warn("Rejected unsigned eSewa failure callback for " + orderId);
+    logger.warn(
+      { orderId },
+      "Rejected eSewa failure callback with missing or invalid token"
+    );
   }
 
   return redirectToCheckout(res, {

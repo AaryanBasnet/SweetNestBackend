@@ -9,6 +9,7 @@
 
 const mongoose = require('mongoose');
 const crypto = require('crypto');
+const logger = require('../config/logger');
 
 // Generate short unique ID (replacement for nanoid in CommonJS)
 const generateId = (length = 4) => crypto.randomBytes(length).toString('hex').slice(0, length);
@@ -55,7 +56,7 @@ const categorySchema = new mongoose.Schema(
 // Pre-save: Generate immutable slug from name (only on creation)
 // Note: Mongoose 9 uses promises, not callbacks - no 'next' parameter
 categorySchema.pre('save', function () {
-  console.log('[Category Model] pre-save hook called');
+  logger.debug('Category pre-save hook running');
   // Generate slug ONLY if it doesn't exist (immutable after creation)
   if (!this.slug) {
     const baseSlug = this.name
@@ -67,7 +68,7 @@ categorySchema.pre('save', function () {
     // Add short unique suffix to prevent collisions
     const uniqueSuffix = generateId(4);
     this.slug = `${baseSlug}-${uniqueSuffix}`;
-    console.log('[Category Model] Generated slug:', this.slug);
+    logger.debug({ slug: this.slug }, 'Generated category slug');
   }
   // No next() needed in Mongoose 9 - just return
 });

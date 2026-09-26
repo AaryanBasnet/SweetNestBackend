@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const logger = require('./logger');
 
 /**
  * Connect to MongoDB.
@@ -20,7 +21,10 @@ const connectDB = async () => {
 
   // SECURITY: log the host, never the connection string - it carries the
   // database username and password, and application logs are not a secret store.
-  console.log(`MongoDB connected: ${conn.connection.host}/${conn.connection.name}`);
+  logger.info(
+    { host: conn.connection.host, database: conn.connection.name },
+    'MongoDB connected'
+  );
 
   return conn;
 };

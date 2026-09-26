@@ -11,6 +11,7 @@ const {
   buildPaginationMeta,
 } = require("../utils/pagination");
 const { awardPoints } = require("./rewardsController");
+const logger = require("../config/logger");
 
 // @desc    Create new order from cart
 // @route   POST /api/orders
@@ -274,9 +275,15 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
   if (status === "delivered" && previousStatus !== "delivered") {
     try {
       await awardPoints(order.user.toString(), order._id, order.total);
-      console.log(`Awarded points for order ${order.orderNumber}`);
+      logger.info(
+        { orderNumber: order.orderNumber, orderId: order._id },
+        "Awarded reward points for delivered order"
+      );
     } catch (error) {
-      console.error("Error awarding points:", error);
+      logger.error(
+        { err: error, orderId: order._id },
+        "Failed to award reward points"
+      );
       // Don't fail the order status update if points awarding fails
     }
   }

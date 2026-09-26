@@ -4,16 +4,17 @@
  */
 
 const Cake = require("../model/Cake");
+const logger = require("../config/logger");
 const Category = require("../model/Category");
 
 const seedHeroCakes = async () => {
   try {
-    console.log("[Seed] Starting hero cakes seed...");
+    logger.info("Starting hero cakes seed");
 
     // Check if we already have hero cakes (avoid duplicates)
     const existingCount = await Cake.countDocuments({ isFeatured: true });
     if (existingCount >= 2) {
-      console.log("[Seed] Hero cakes already exist, skipping seed.");
+      logger.info("Hero cakes already present, skipping seed");
       return;
     }
 
@@ -26,7 +27,7 @@ const seedHeroCakes = async () => {
         isActive: true,
         displayOrder: 1,
       });
-      console.log("[Seed] Created Featured Cakes category");
+      logger.info("Created Featured Cakes category");
     }
 
     // Hero Cake 1: Strawberry Cheesecake
@@ -177,9 +178,9 @@ const seedHeroCakes = async () => {
     });
     if (!existingStrawberry) {
       await Cake.create(strawberryCake);
-      console.log("[Seed] ✓ Created Strawberry Cheesecake");
+      logger.info("Seeded Strawberry Cheesecake");
     } else {
-      console.log("[Seed] Strawberry Cheesecake already exists");
+      logger.debug("Strawberry Cheesecake already exists");
     }
 
     const existingChocolate = await Cake.findOne({
@@ -187,14 +188,14 @@ const seedHeroCakes = async () => {
     });
     if (!existingChocolate) {
       await Cake.create(chocolateCake);
-      console.log("[Seed] ✓ Created Dark Chocolate Cake");
+      logger.info("Seeded Dark Chocolate Cake");
     } else {
-      console.log("[Seed] Dark Chocolate Cake already exists");
+      logger.debug("Dark Chocolate Cake already exists");
     }
 
-    console.log("[Seed] Hero cakes seed completed successfully!");
+    logger.info("Hero cakes seed completed");
   } catch (error) {
-    console.error("[Seed] Error seeding hero cakes:", error.message);
+    logger.error({ err: error }, "Failed to seed hero cakes");
     // Don't throw error - just log it so server can continue
   }
 };
