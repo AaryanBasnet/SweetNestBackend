@@ -1,53 +1,30 @@
 /**
  * Cart Controller
- * CRUD operations for user shopping carts
+ *
+ * HTTP adapters only. Each handler takes the request apart, calls a service,
+ * and shapes the reply. Every rule about what a cart line costs, what may be
+ * added, and which discount codes apply lives in services/.
+ *
+ * Validation of request shape is handled by Zod middleware in the routes.
  */
 
 const asyncHandler = require('express-async-handler');
+
+const cartService = require('../services/cartService');
+const discountService = require('../services/discountService');
 const Cart = require('../model/Cart');
-const Cake = require('../model/Cake');
-const Coupon = require('../model/Coupon');
+const { notFound } = require('../utils/AppError');
 
 // @desc    Get user's cart
 // @route   GET /api/cart
 // @access  Private
 const getCart = asyncHandler(async (req, res) => {
-  let cart = await Cart.findOne({ user: req.user._id }).populate({
-    path: 'items.cake',
-    select: 'name slug images weightOptions basePrice isActive category',
-    populate: {
-      path: 'category',
-      select: 'name slug',
-    },
-  });
-
-  // Create empty cart if doesn't exist
-  if (!cart) {
-    cart = await Cart.create({ user: req.user._id, items: [] });
-  }
-
-  // Filter out inactive cakes and recalculate
-  const activeItems = cart.items.filter((item) => item.cake && item.cake.isActive);
-
-  // If items were removed, update cart
-  if (activeItems.length !== cart.items.length) {
-    cart.items = activeItems;
-    await cart.save();
-  }
+  const data = await cartService.getCart(req.user._id);
 
   res.status(200).json({
     success: true,
     message: 'Cart fetched successfully',
-    data: {
-      items: activeItems,
-      itemCount: cart.itemCount,
-      subtotal: cart.subtotal,
-      shipping: cart.shipping,
-      discountAmount: cart.discountAmount,
-      total: cart.total,
-      deliveryType: cart.deliveryType,
-      promoCode: cart.promoCode?.code || null,
-    },
+    data,
   });
 });
 
@@ -55,91 +32,12 @@ const getCart = asyncHandler(async (req, res) => {
 // @route   POST /api/cart
 // @access  Private
 const addToCart = asyncHandler(async (req, res) => {
-  const { cakeId, quantity = 1, selectedWeight, customization } = req.body;
-
-  // Verify cake exists and is active
-  const cake = await Cake.findOne({ _id: cakeId, isActive: true });
-  if (!cake) {
-    res.status(404);
-    throw new Error('Cake not found or unavailable');
-  }
-
-  // Verify weight option exists
-  const weightOption = cake.weightOptions.find(
-    (opt) => opt.weightInKg === selectedWeight.weightInKg
-  );
-  if (!weightOption) {
-    res.status(400);
-    throw new Error('Invalid weight option');
-  }
-
-  let cart = await Cart.findOne({ user: req.user._id });
-
-  if (!cart) {
-    cart = await Cart.create({
-      user: req.user._id,
-      items: [
-        {
-          cake: cakeId,
-          quantity,
-          selectedWeight: {
-            weightInKg: weightOption.weightInKg,
-            label: weightOption.label,
-            price: weightOption.price,
-          },
-          customization,
-        },
-      ],
-    });
-  } else {
-    // Check if same cake with same weight already in cart
-    const existingIndex = cart.items.findIndex(
-      (item) =>
-        item.cake.toString() === cakeId &&
-        item.selectedWeight.weightInKg === selectedWeight.weightInKg
-    );
-
-    if (existingIndex > -1) {
-      // Update quantity
-      const newQty = cart.items[existingIndex].quantity + quantity;
-      if (newQty > 10) {
-        res.status(400);
-        throw new Error('Maximum quantity is 10');
-      }
-      cart.items[existingIndex].quantity = newQty;
-    } else {
-      // Add new item
-      cart.items.push({
-        cake: cakeId,
-        quantity,
-        selectedWeight: {
-          weightInKg: weightOption.weightInKg,
-          label: weightOption.label,
-          price: weightOption.price,
-        },
-        customization,
-      });
-    }
-
-    await cart.save();
-  }
-
-  // Populate and return
-  await cart.populate({
-    path: 'items.cake',
-    select: 'name slug images weightOptions basePrice isActive',
-  });
+  const data = await cartService.addItem(req.user._id, req.body);
 
   res.status(201).json({
     success: true,
     message: 'Added to cart',
-    data: {
-      items: cart.items,
-      itemCount: cart.itemCount,
-      subtotal: cart.subtotal,
-      shipping: cart.shipping,
-      total: cart.total,
-    },
+    data,
   });
 });
 
@@ -147,47 +45,16 @@ const addToCart = asyncHandler(async (req, res) => {
 // @route   PUT /api/cart/:itemId
 // @access  Private
 const updateCartItem = asyncHandler(async (req, res) => {
-  const { itemId } = req.params;
-  const { quantity } = req.body;
-
-  if (quantity < 1 || quantity > 10) {
-    res.status(400);
-    throw new Error('Quantity must be between 1 and 10');
-  }
-
-  const cart = await Cart.findOne({ user: req.user._id });
-
-  if (!cart) {
-    res.status(404);
-    throw new Error('Cart not found');
-  }
-
-  const item = cart.items.id(itemId);
-
-  if (!item) {
-    res.status(404);
-    throw new Error('Item not in cart');
-  }
-
-  item.quantity = quantity;
-  await cart.save();
-
-  // Populate and return
-  await cart.populate({
-    path: 'items.cake',
-    select: 'name slug images weightOptions basePrice isActive',
-  });
+  const data = await cartService.updateItemQuantity(
+    req.user._id,
+    req.params.itemId,
+    req.body.quantity
+  );
 
   res.status(200).json({
     success: true,
     message: 'Cart updated',
-    data: {
-      items: cart.items,
-      itemCount: cart.itemCount,
-      subtotal: cart.subtotal,
-      shipping: cart.shipping,
-      total: cart.total,
-    },
+    data,
   });
 });
 
@@ -195,113 +62,25 @@ const updateCartItem = asyncHandler(async (req, res) => {
 // @route   DELETE /api/cart/:itemId
 // @access  Private
 const removeFromCart = asyncHandler(async (req, res) => {
-  const { itemId } = req.params;
-
-  const cart = await Cart.findOne({ user: req.user._id });
-
-  if (!cart) {
-    res.status(404);
-    throw new Error('Cart not found');
-  }
-
-  const itemIndex = cart.items.findIndex((item) => item._id.toString() === itemId);
-
-  if (itemIndex === -1) {
-    res.status(404);
-    throw new Error('Item not in cart');
-  }
-
-  cart.items.splice(itemIndex, 1);
-  await cart.save();
+  const data = await cartService.removeItem(req.user._id, req.params.itemId);
 
   res.status(200).json({
     success: true,
-    message: 'Removed from cart',
-    data: {
-      itemCount: cart.itemCount,
-      subtotal: cart.subtotal,
-      shipping: cart.shipping,
-      total: cart.total,
-    },
+    message: 'Item removed from cart',
+    data,
   });
 });
 
-// @desc    Sync cart (merge localStorage with server)
+// @desc    Merge a guest cart into the account's cart
 // @route   POST /api/cart/sync
 // @access  Private
 const syncCart = asyncHandler(async (req, res) => {
-  const { items } = req.body; // Array of cart items from localStorage
-
-  if (!Array.isArray(items)) {
-    res.status(400);
-    throw new Error('Items must be an array');
-  }
-
-  let cart = await Cart.findOne({ user: req.user._id });
-
-  if (!cart) {
-    cart = await Cart.create({ user: req.user._id, items: [] });
-  }
-
-  // Process each item from localStorage
-  for (const localItem of items) {
-    const { cakeId, quantity, selectedWeight } = localItem;
-
-    // Verify cake exists and is active
-    const cake = await Cake.findOne({ _id: cakeId, isActive: true });
-    if (!cake) continue;
-
-    // Verify weight option
-    const weightOption = cake.weightOptions.find(
-      (opt) => opt.weightInKg === selectedWeight?.weightInKg
-    );
-    if (!weightOption) continue;
-
-    // Check if already in cart
-    const existingIndex = cart.items.findIndex(
-      (item) =>
-        item.cake.toString() === cakeId &&
-        item.selectedWeight.weightInKg === selectedWeight.weightInKg
-    );
-
-    if (existingIndex > -1) {
-      // Update quantity (max 10)
-      cart.items[existingIndex].quantity = Math.min(
-        10,
-        cart.items[existingIndex].quantity + (quantity || 1)
-      );
-    } else {
-      // Add new item
-      cart.items.push({
-        cake: cakeId,
-        quantity: Math.min(10, quantity || 1),
-        selectedWeight: {
-          weightInKg: weightOption.weightInKg,
-          label: weightOption.label,
-          price: weightOption.price,
-        },
-      });
-    }
-  }
-
-  await cart.save();
-
-  // Populate and return
-  await cart.populate({
-    path: 'items.cake',
-    select: 'name slug images weightOptions basePrice isActive',
-  });
+  const data = await cartService.syncCart(req.user._id, req.body.items);
 
   res.status(200).json({
     success: true,
     message: 'Cart synced successfully',
-    data: {
-      items: cart.items,
-      itemCount: cart.itemCount,
-      subtotal: cart.subtotal,
-      shipping: cart.shipping,
-      total: cart.total,
-    },
+    data,
   });
 });
 
@@ -309,188 +88,83 @@ const syncCart = asyncHandler(async (req, res) => {
 // @route   DELETE /api/cart
 // @access  Private
 const clearCart = asyncHandler(async (req, res) => {
-  const cart = await Cart.findOne({ user: req.user._id });
-
-  if (cart) {
-    cart.items = [];
-    cart.promoCode = undefined;
-    await cart.save();
-  }
+  const data = await cartService.clearCart(req.user._id);
 
   res.status(200).json({
     success: true,
     message: 'Cart cleared',
-    data: {
-      items: [],
-      itemCount: 0,
-      subtotal: 0,
-      shipping: 0,
-      total: 0,
-    },
+    data,
   });
 });
 
-// @desc    Update delivery type
+// @desc    Set delivery or pickup
 // @route   PUT /api/cart/delivery
 // @access  Private
 const updateDeliveryType = asyncHandler(async (req, res) => {
-  const { deliveryType } = req.body;
-
-  if (!['delivery', 'pickup'].includes(deliveryType)) {
-    res.status(400);
-    throw new Error('Invalid delivery type');
-  }
-
-  let cart = await Cart.findOne({ user: req.user._id });
-
-  if (!cart) {
-    cart = await Cart.create({ user: req.user._id, items: [], deliveryType });
-  } else {
-    cart.deliveryType = deliveryType;
-    await cart.save();
-  }
+  const data = await cartService.setDeliveryType(
+    req.user._id,
+    req.body.deliveryType
+  );
 
   res.status(200).json({
     success: true,
     message: 'Delivery type updated',
-    data: {
-      deliveryType: cart.deliveryType,
-      shipping: cart.shipping,
-      total: cart.total,
-    },
+    data,
   });
 });
 
-// @desc    Apply promo code or coupon
+// @desc    Apply a promo code or an earned coupon
 // @route   POST /api/cart/promo
 // @access  Private
 const applyPromoCode = asyncHandler(async (req, res) => {
-  const { code } = req.body;
-
-  if (!code) {
-    res.status(400);
-    throw new Error('Promo code is required');
-  }
-
   const cart = await Cart.findOne({ user: req.user._id });
 
   if (!cart) {
-    res.status(404);
-    throw new Error('Cart not found');
+    throw notFound('Cart not found');
   }
 
-  const codeUpper = code.toUpperCase();
-
-  // First check if it's a user's earned coupon
-  const coupon = await Coupon.findOne({
-    code: codeUpper,
-    user: req.user._id,
+  // Which codes exist, who may use them, whether they have expired and what
+  // the order must be worth are all decided in one service.
+  const discount = await discountService.resolveDiscountCode({
+    code: req.body.code,
+    userId: req.user._id,
+    subtotal: cart.subtotal,
   });
 
-  if (coupon) {
-    // Validate coupon
-    if (coupon.isUsed) {
-      res.status(400);
-      throw new Error('This coupon has already been used');
-    }
-
-    if (new Date(coupon.expiresAt) <= new Date()) {
-      res.status(400);
-      throw new Error('This coupon has expired');
-    }
-
-    // Check minimum order amount
-    if (cart.subtotal < coupon.minOrderAmount) {
-      res.status(400);
-      throw new Error(
-        `Minimum order amount of Rs. ${coupon.minOrderAmount} required for this coupon`
-      );
-    }
-
-    // Apply coupon
-    cart.promoCode = {
-      code: coupon.code,
-      discount: coupon.discountValue,
-      discountType: coupon.discountType,
-      maxDiscount: coupon.maxDiscount,
-      couponId: coupon._id,
-    };
-
-    await cart.save();
-
-    return res.status(200).json({
-      success: true,
-      message: 'Coupon applied successfully',
-      data: {
-        promoCode: cart.promoCode.code,
-        discountAmount: cart.discountAmount,
-        total: cart.total,
-        isCoupon: true,
-      },
-    });
-  }
-
-  // If not a coupon, check regular promo codes
-  const promoCodes = {
-    SWEET10: { discount: 10, discountType: 'percentage', minOrder: 500 },
-    FLAT50: { discount: 50, discountType: 'fixed', minOrder: 1000 },
-    WELCOME20: { discount: 20, discountType: 'percentage', minOrder: 800, maxDiscount: 200 },
-  };
-
-  const promo = promoCodes[codeUpper];
-
-  if (!promo) {
-    res.status(400);
-    throw new Error('Invalid promo code');
-  }
-
-  // Check minimum order amount for promo code
-  if (cart.subtotal < promo.minOrder) {
-    res.status(400);
-    throw new Error(`Minimum order amount of Rs. ${promo.minOrder} required for this promo code`);
-  }
-
   cart.promoCode = {
-    code: codeUpper,
-    discount: promo.discount,
-    discountType: promo.discountType,
-    maxDiscount: promo.maxDiscount,
+    code: discount.code,
+    discount: discount.discount,
+    discountType: discount.discountType,
+    maxDiscount: discount.maxDiscount,
+    couponId: discount.couponId,
   };
 
   await cart.save();
 
   res.status(200).json({
     success: true,
-    message: 'Promo code applied',
+    message: discount.isCoupon
+      ? 'Coupon applied successfully'
+      : 'Promo code applied',
     data: {
       promoCode: cart.promoCode.code,
       discountAmount: cart.discountAmount,
       total: cart.total,
-      isCoupon: false,
+      isCoupon: discount.isCoupon,
     },
   });
 });
 
-// @desc    Remove promo code
+// @desc    Remove the applied promo code
 // @route   DELETE /api/cart/promo
 // @access  Private
 const removePromoCode = asyncHandler(async (req, res) => {
-  const cart = await Cart.findOne({ user: req.user._id });
-
-  if (!cart) {
-    res.status(404);
-    throw new Error('Cart not found');
-  }
-
-  cart.promoCode = undefined;
-  await cart.save();
+  const data = await cartService.removePromoCode(req.user._id);
 
   res.status(200).json({
     success: true,
     message: 'Promo code removed',
-    data: {
-      total: cart.total,
-    },
+    data,
   });
 });
 

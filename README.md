@@ -70,6 +70,7 @@ SweetNestBackend/
 ├── routes/         # API route definitions
 ├── controller/     # Business logic
 ├── middleware/     # Auth, error handling, guards
+├── services/       # Business rules (pricing, discounts, cart, orders)
 ├── validators/     # Zod validation schemas
 ├── utils/          # Helper utilities
 ├── tests/          # Jest + Supertest suite
@@ -165,6 +166,93 @@ Main API modules:
 
 ---
 
+## 🏗️ Architecture
+
+```
+routes/       what URL maps to what, plus auth guards and Zod validation
+controller/   HTTP adapters: take the request apart, call a service, reply
+services/     the actual rules - what things cost, what may be ordered
+model/        Mongoose schemas and the data's own invariants
+utils/        shared helpers (AppError, pagination, slugify)
+```
+
+### Why there is a service layer
+
+Controllers used to do everything: read `req.body`, query Mongoose, apply
+business rules, and build the JSON reply, all in one function. `createOrder`
+was 135 lines; `applyPromoCode` was 106.
+
+That is workable until a rule needs to exist in two places. Then it gets
+copied, the copies drift, and they disagree. Two real bugs in this codebase
+came from exactly that:
+
+* `maxDiscount` was applied in one branch of the promo logic and forgotten in
+  the other, and written to a schema field that did not exist - so a coupon
+  advertised as "20% off, up to Rs 200" gave **Rs 2,000** off a Rs 10,000
+  order.
+* Cart lines were priced in `addToCart` and again in `syncCart`, with
+  different quantity caps.
+
+Neither was a typo. Both were the predictable result of one rule living in
+several places.
+
+### The layering rule
+
+**A layer may only know about the layer beneath it.**
+
+* Controllers know about services. Services do not know about HTTP.
+* Services know about models. Models do not call services for business rules
+  (`Cart`'s money virtuals are the one deliberate exception - they delegate
+  to `pricingService` so the arithmetic cannot fork).
+* Nothing reaches upward.
+
+The practical test: **a service must be callable from something that is not a
+web request** - a scheduled job, a CLI script, a test. If it touches `req` or
+`res`, it is not a service. This is why services throw `AppError` (which
+carries its own status code) instead of calling `res.status(400)`.
+
+### The services
+
+| File | Owns |
+| --- | --- |
+| `pricingService` | Every figure a customer sees. Pure functions, no database. |
+| `discountService` | What a promo code or earned coupon gives, and consuming it. |
+| `cartService` | Cart contents, priced from the catalogue. |
+| `orderService` | Turning a cart into an order. |
+
+`pricingService` is pure on purpose: no database, no request, no side effects.
+That makes each rule testable in microseconds (32 tests run in 1.4 seconds)
+and means the same code can price a cart, price an order, or answer "what
+would this cost" without the three drifting apart.
+
+### Money
+
+Amounts are `Number` (rupees), not integer paisa. That is not what you would
+choose from scratch - `0.1 + 0.2` is not `0.3` in binary floating point - but
+changing it now would mean migrating every stored order. Instead every
+computed figure is rounded at the single point where money is produced, in
+`pricingService.round`. Integer paisa is the correct fix if this ever handles
+serious volume.
+
+There is a tax line that defaults to 0. It exists so that adding VAT later is
+a config change in one place rather than an archaeology expedition through
+every total in the codebase.
+
+### Known unfinished work
+
+* **Promo codes are still hardcoded**, now in `discountService` instead of
+  inside a request handler. They cannot be changed without a deploy and
+  cannot be scheduled or retired. They belong in the database with an admin
+  screen; `resolvePromoCode` is shaped so that is a drop-in replacement.
+* **No multi-document transactions.** Order creation, cart clearing and coupon
+  consumption are separate writes. Each one individually is atomic and
+  idempotent, but they are not atomic *together* - that needs a replica set,
+  which a standalone `mongod` cannot provide.
+* **Some controllers are still thick.** Analytics, notifications and
+  promotions have not been through this treatment yet.
+
+---
+
 ## 🧪 Testing
 
 ```bash
@@ -174,9 +262,9 @@ npm run test:coverage # with a coverage report
 npm run lint          # eslint
 ```
 
-**147 tests** covering authentication, password reset, the auth middleware,
-cart pricing, order creation and ownership, eSewa payments, review voting and
-rate limiting.
+**216 tests** covering authentication, password reset, the auth middleware,
+pricing and discounts, cart operations and guest-cart merging, order creation
+and ownership, eSewa payments, review voting and rate limiting.
 
 ### How the database works in tests
 
@@ -226,9 +314,13 @@ actually costs something:
 
 | Area | Statements |
 | --- | --- |
-| `controller/esewaController.js` | 90% |
+| `services/discountService.js` | 100% |
 | `middleware/authMiddleware.js` | 100% |
 | `middleware/rateLimitMiddleware.js` | 100% |
+| `services/pricingService.js` | 98% |
+| `services/orderService.js` | 90% |
+| `controller/esewaController.js` | 90% |
+| `services/cartService.js` | 78% |
 | `controller/userController.js` | 74% |
 
 Analytics, notifications, promotions and wishlist are not yet covered - that
