@@ -88,6 +88,18 @@ const cartSchema = new mongoose.Schema(
         ref: 'Coupon',
       },
     },
+    // Claimed atomically at the start of checkout so two simultaneous
+    // requests for the same cart cannot both proceed. Released on failure,
+    // and treated as stale (reclaimable) after LOCK_TIMEOUT_MS in case a
+    // request crashes mid-checkout without releasing it.
+    checkoutLock: {
+      type: Boolean,
+      default: false,
+    },
+    checkoutLockAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

@@ -99,7 +99,8 @@ const getCakes = asyncHandler(async (req, res) => {
       .sort(sortOptions)
       .skip(skip)
       .limit(limit)
-      .select('-__v'),
+      .select('-__v')
+      .lean(),
     Cake.countDocuments(filter),
   ]);
 
@@ -334,7 +335,8 @@ const getFeaturedCakes = asyncHandler(async (req, res) => {
     .populate('category', 'name slug')
     .sort({ createdAt: -1 })
     .limit(limit)
-    .select('-__v');
+    .select('-__v')
+    .lean();
 
   res.status(200).json({
     success: true,
@@ -365,7 +367,8 @@ const getCakesByCategory = asyncHandler(async (req, res) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .select('-__v'),
+      .select('-__v')
+      .lean(),
     Cake.countDocuments(filter),
   ]);
 
