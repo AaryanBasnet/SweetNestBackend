@@ -99,7 +99,8 @@ const getCakes = asyncHandler(async (req, res) => {
       .sort(sortOptions)
       .skip(skip)
       .limit(limit)
-      .select('-__v'),
+      .select('-__v')
+      .lean(),
     Cake.countDocuments(filter),
   ]);
 
