@@ -18,30 +18,47 @@ const Order = require("../model/Order");
 const Cart = require("../model/Cart");
 const logger = require("../config/logger");
 
-const isProd = process.env.NODE_ENV === "production";
+/**
+ * Which eSewa gateway to sign requests against.
+ *
+ * Deliberately NOT tied to NODE_ENV. The site can be deployed in production
+ * mode - real security headers, real error handling, real domain - while this
+ * project still has no real merchant account. If this had been keyed off
+ * NODE_ENV === "production" the way isProd elsewhere in the app is, deploying
+ * to Render with NODE_ENV=production would have forced the live gateway and
+ * crashed the server at boot (see the credential check below) with no way to
+ * run a working demo.
+ *
+ * ESEWA_ENV=live is an explicit opt-in once a real merchant account exists.
+ * Anything else - unset, "sandbox", a typo - stays on the test gateway, which
+ * is the fail-safe direction: the worst case of getting this wrong is a demo
+ * payment that quietly doesn't charge anyone, not a real card getting billed
+ * against test infrastructure.
+ */
+const isLiveGateway = process.env.ESEWA_ENV === "live";
 
 /**
  * eSewa configuration.
  *
- * The test merchant credentials are public sample values. They are fine as a
- * development default but must never be silently used in production - a
- * misconfigured deploy would otherwise sign live payments with a key that is
- * printed in eSewa's public documentation.
+ * The test merchant credentials are public sample values, published in
+ * eSewa's own documentation. They are fine as the default for every
+ * environment that isn't the live gateway - including a production deploy of
+ * this demo - but must never be silently used once ESEWA_ENV=live.
  */
 const ESEWA_CONFIG = {
-  merchantId: process.env.ESEWA_MERCHANT_ID || (isProd ? null : "EPAYTEST"),
-  secretKey: process.env.ESEWA_SECRET_KEY || (isProd ? null : "8gBm/:&EnhH.1/q"),
-  paymentUrl: isProd
+  merchantId: process.env.ESEWA_MERCHANT_ID || (isLiveGateway ? null : "EPAYTEST"),
+  secretKey: process.env.ESEWA_SECRET_KEY || (isLiveGateway ? null : "8gBm/:&EnhH.1/q"),
+  paymentUrl: isLiveGateway
     ? "https://epay.esewa.com.np/api/epay/main/v2/form"
     : "https://rc-epay.esewa.com.np/api/epay/main/v2/form",
-  statusUrl: isProd
+  statusUrl: isLiveGateway
     ? "https://epay.esewa.com.np/api/epay/transaction/status/"
     : "https://rc-epay.esewa.com.np/api/epay/transaction/status/",
 };
 
-if (isProd && (!ESEWA_CONFIG.merchantId || !ESEWA_CONFIG.secretKey)) {
+if (isLiveGateway && (!ESEWA_CONFIG.merchantId || !ESEWA_CONFIG.secretKey)) {
   throw new Error(
-    "ESEWA_MERCHANT_ID and ESEWA_SECRET_KEY must be set in production"
+    "ESEWA_MERCHANT_ID and ESEWA_SECRET_KEY must be set when ESEWA_ENV=live"
   );
 }
 

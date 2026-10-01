@@ -47,5 +47,8 @@
   },
   "overrides": {
     "mongodb": "<7.6.0"
+  },
+  "engines": {
+    "node": "22.x"
   }
 }
