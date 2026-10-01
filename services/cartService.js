@@ -20,11 +20,36 @@ const MAX_QUANTITY = pricing.config.MAX_QUANTITY_PER_ITEM;
 
 const CAKE_FIELDS = "name slug images weightOptions basePrice isActive category";
 
-/** Find a user's cart, creating an empty one if they have never had one. */
+/**
+ * Find a user's cart, creating an empty one if they have never had one.
+ *
+ * Upsert, not find-then-create: a brand new user clicking "add to cart"
+ * twice in quick succession (a double click, or two tabs) fires this
+ * concurrently with no cart yet to find, so a separate find and create left
+ * a gap where both requests could see "nothing exists" and both try to
+ * create one - caught at the database by the unique index on `user`, but as
+ * an unhandled duplicate-key error, which reached the customer as an
+ * unexplained failure rather than a cart.
+ *
+ * The upsert collapses find-and-create into one request. The catch handles
+ * a documented MongoDB caveat: two concurrent upserts against the same
+ * unique key can still both attempt an insert and have the loser's insert
+ * rejected as a duplicate, even though the index is doing exactly its job -
+ * the loser just re-fetches the document the winner created.
+ */
 const getOrCreateCart = async (userId) => {
-  const existing = await Cart.findOne({ user: userId });
-  if (existing) return existing;
-  return Cart.create({ user: userId, items: [] });
+  try {
+    return await Cart.findOneAndUpdate(
+      { user: userId },
+      { $setOnInsert: { user: userId, items: [] } },
+      { upsert: true, returnDocument: "after" }
+    );
+  } catch (error) {
+    if (error.code === 11000) {
+      return Cart.findOne({ user: userId });
+    }
+    throw error;
+  }
 };
 
 /**
@@ -111,33 +136,145 @@ const getCart = async (userId) => {
   return toCartResponse(cart, activeItems);
 };
 
+/**
+ * Atomically increment quantity on an existing matching line, but only if
+ * doing so would not exceed MAX_QUANTITY.
+ *
+ * The cap is enforced by the query filter itself - `quantity: { $lte:
+ * MAX_QUANTITY - quantityToAdd }` - not by reading a value and checking it in
+ * application code. That is what makes this safe under concurrency: MongoDB
+ * serializes writes to a single document, so whichever request's update
+ * lands first is evaluated against the real stored quantity, and the second
+ * request's filter is then checked against the value the first one just
+ * wrote - never against a value either of them merely read earlier.
+ *
+ * Returns the updated cart if a matching line existed and fit under the cap.
+ * Returns null in two different situations on purpose: no matching line
+ * exists at all, or a matching line exists but is already at (or would
+ * exceed) the cap. addItem below is what tells those apart - see its comment.
+ */
+const incrementExistingLine = async (userId, cakeId, weightInKg, quantityToAdd) =>
+  Cart.findOneAndUpdate(
+    {
+      user: userId,
+      items: {
+        $elemMatch: {
+          cake: cakeId,
+          "selectedWeight.weightInKg": weightInKg,
+          quantity: { $lte: MAX_QUANTITY - quantityToAdd },
+        },
+      },
+    },
+    { $inc: { "items.$.quantity": quantityToAdd } },
+    { returnDocument: "after" }
+  );
+
+/**
+ * Read-only lookup of a matching line, regardless of its quantity. Used only
+ * to turn a null from incrementExistingLine into the right outcome: if a
+ * line exists here, incrementExistingLine's null meant "at capacity", not
+ * "no line yet".
+ */
+const findMatchingLine = async (userId, cakeId, weightInKg) => {
+  const cart = await Cart.findOne(
+    {
+      user: userId,
+      items: { $elemMatch: { cake: cakeId, "selectedWeight.weightInKg": weightInKg } },
+    },
+    { "items.$": 1 }
+  );
+  return cart ? cart.items[0] : null;
+};
+
+/**
+ * Atomically push a new line, but only if no matching line exists yet. The
+ * existence check and the push happen as one database write, so two
+ * concurrent requests that both missed incrementExistingLine cannot both
+ * succeed here - only the first to reach the database wins; the second's
+ * filter no longer matches (the line now exists) and it gets null back.
+ */
+const pushNewLineIfAbsent = async (userId, line) => {
+  return Cart.findOneAndUpdate(
+    {
+      user: userId,
+      items: {
+        $not: {
+          $elemMatch: {
+            cake: line.cake,
+            "selectedWeight.weightInKg": line.selectedWeight.weightInKg,
+          },
+        },
+      },
+    },
+    { $push: { items: line } },
+    { returnDocument: "after" }
+  );
+};
+
+/**
+ * Add a cake to the cart, safe under concurrent identical requests.
+ *
+ * Previously this read the cart, decided in application code whether a
+ * matching line existed, and wrote the result back - a classic
+ * read-modify-write gap. Confirmed via a concurrency test
+ * (scripts/race-test-cart-quantity.js): 5 simultaneous "add 1" requests for
+ * the same cake+weight produced 5 separate duplicate lines instead of one
+ * line with quantity 5, because every request read the cart before any of
+ * them had written back.
+ *
+ * The fix tries an atomic capped increment first, falls back to an atomic
+ * conditional push if no line existed, and retries a few times for the rare
+ * case both attempts lose a tight race against a third request. If every
+ * attempt is exhausted, a final read distinguishes "the cap was genuinely
+ * hit" (reject with the same message a sequential request would have gotten)
+ * from "something stayed inconsistent" (ask the caller to retry).
+ */
 const addItem = async (userId, { cakeId, quantity = 1, selectedWeight, customization }) => {
   const cake = await Cake.findOne({ _id: cakeId, isActive: true });
   if (!cake) {
     throw notFound("Cake not found or unavailable");
   }
 
-  const line = buildCartLine(cake, selectedWeight, quantity, customization);
-  const cart = await getOrCreateCart(userId);
-
-  const existingIndex = findLineIndex(cart, cakeId, line.selectedWeight.weightInKg);
-
-  if (existingIndex > -1) {
-    const newQuantity = cart.items[existingIndex].quantity + quantity;
-
-    if (newQuantity > MAX_QUANTITY) {
-      throw badRequest(`Maximum quantity is ${MAX_QUANTITY}`);
-    }
-
-    cart.items[existingIndex].quantity = newQuantity;
-  } else {
-    if (quantity > MAX_QUANTITY) {
-      throw badRequest(`Maximum quantity is ${MAX_QUANTITY}`);
-    }
-    cart.items.push(line);
+  // A single request can never legally add more than the cap in one go,
+  // whether or not a line already exists for this cake and weight - reject
+  // up front rather than spending a database round trip on a request that
+  // cannot succeed either way.
+  if (quantity > MAX_QUANTITY) {
+    throw badRequest(`Maximum quantity is ${MAX_QUANTITY}`);
   }
 
-  await cart.save();
+  const line = buildCartLine(cake, selectedWeight, quantity, customization);
+  const weightInKg = line.selectedWeight.weightInKg;
+
+  await getOrCreateCart(userId); // ensure a cart document exists before the atomic ops below
+
+  const MAX_ATTEMPTS = 3;
+  let cart = null;
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS && !cart; attempt++) {
+    cart = await incrementExistingLine(userId, cake._id, weightInKg, quantity);
+    if (cart) break;
+
+    cart = await pushNewLineIfAbsent(userId, line);
+    // Both null: either a concurrent request just created the line (the
+    // next loop iteration's increment will find it), or the existing line
+    // is already at capacity. Resolved below once retries are exhausted.
+  }
+
+  if (!cart) {
+    const existingLine = await findMatchingLine(userId, cake._id, weightInKg);
+
+    if (existingLine) {
+      // A line is there and incrementExistingLine still would not take it -
+      // the cap was genuinely hit. Same message and status a sequential
+      // request would have gotten; concurrency did not change the outcome,
+      // only how it had to be computed.
+      throw badRequest(`Maximum quantity is ${MAX_QUANTITY}`);
+    }
+
+    throw badRequest("Could not update cart - please try again");
+  }
+
   await populateCart(cart);
 
   return toCartResponse(cart);

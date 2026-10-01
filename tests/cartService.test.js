@@ -18,6 +18,12 @@ const guestItem = (cake, quantity = 1, weightInKg = 1) => ({
   selectedWeight: { weightInKg, label: `${weightInKg} kg`, price: 999999 },
 });
 
+const addPayload = (cake, quantity = 1, weightInKg = 1) => ({
+  cakeId: cake._id.toString(),
+  quantity,
+  selectedWeight: { weightInKg },
+});
+
 describe("syncCart - merging a guest cart on login", () => {
   it("adds guest items to an empty account cart", async () => {
     const { user } = await createUser();
@@ -152,6 +158,124 @@ describe("syncCart - merging a guest cart on login", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data.itemCount).toBe(2);
+  });
+});
+
+// ==============================================================================
+// addItem - concurrency.
+//
+// Confirmed via a manual script (scripts/race-test-cart-quantity.js) before
+// this fix: 5 simultaneous "add 1" requests for the same cake and weight
+// produced 5 separate duplicate lines instead of one line with quantity 5.
+// The old implementation read the cart, decided in application code whether a
+// matching line existed, and wrote the result back - every concurrent request
+// read the cart before any of them had written, so each one independently
+// concluded "no line yet" and pushed its own.
+//
+// These tests pin the fix down for CI: no server, no script, just Promise.all
+// against the service function directly.
+// ==============================================================================
+describe("addItem - concurrency", () => {
+  it("does not create duplicate lines under concurrent identical adds", async () => {
+    const { user } = await createUser();
+    const cake = await createCake();
+
+    await Promise.all(
+      Array.from({ length: 5 }, () => cartService.addItem(user._id, addPayload(cake, 1)))
+    );
+
+    const cart = await Cart.findOne({ user: user._id });
+    const matchingLines = cart.items.filter(
+      (item) => item.cake.toString() === cake._id.toString()
+    );
+
+    expect(matchingLines).toHaveLength(1);
+    expect(matchingLines[0].quantity).toBe(5);
+  });
+
+  it("does not lose updates when adding concurrently to an existing line", async () => {
+    const { user } = await createUser();
+    const cake = await createCake();
+
+    await cartService.addItem(user._id, addPayload(cake, 2));
+
+    await Promise.all(
+      Array.from({ length: 5 }, () => cartService.addItem(user._id, addPayload(cake, 1)))
+    );
+
+    const cart = await Cart.findOne({ user: user._id });
+    expect(cart.items).toHaveLength(1);
+    expect(cart.items[0].quantity).toBe(7); // 2 + 5x1
+  });
+
+  // The regression test for the bug introduced while fixing the first one:
+  // an earlier version of this fix made the cap-exceeded case succeed
+  // silently instead of rejecting, which is a real behaviour change a
+  // customer would notice (their "add 6 more" looks like it worked but
+  // quietly only added 2).
+  it("rejects rather than silently caps when concurrent adds would exceed the max", async () => {
+    const { user } = await createUser();
+    const cake = await createCake();
+
+    // 5 x "add 3" = 15 requested against a cap of 10. Some must succeed,
+    // the rest must be rejected - none may be silently truncated.
+    const results = await Promise.allSettled(
+      Array.from({ length: 5 }, () => cartService.addItem(user._id, addPayload(cake, 3)))
+    );
+
+    const cart = await Cart.findOne({ user: user._id });
+    const line = cart.items.find((item) => item.cake.toString() === cake._id.toString());
+
+    expect(line.quantity).toBeLessThanOrEqual(10);
+
+    const rejected = results.filter((r) => r.status === "rejected");
+    expect(rejected.length).toBeGreaterThan(0);
+    rejected.forEach((r) => {
+      expect(r.reason).toMatchObject({ statusCode: 400 });
+      expect(r.reason.message).toMatch(/maximum quantity/i);
+    });
+  });
+
+  it("keeps different weights of the same cake as independent lines under concurrency", async () => {
+    const { user } = await createUser();
+    const cake = await createCake(); // weight options at 1kg and 2kg
+
+    await Promise.all([
+      ...Array.from({ length: 3 }, () => cartService.addItem(user._id, addPayload(cake, 1, 1))),
+      ...Array.from({ length: 3 }, () => cartService.addItem(user._id, addPayload(cake, 1, 2))),
+    ]);
+
+    const cart = await Cart.findOne({ user: user._id });
+    const oneKg = cart.items.find((item) => item.selectedWeight.weightInKg === 1);
+    const twoKg = cart.items.find((item) => item.selectedWeight.weightInKg === 2);
+
+    expect(cart.items).toHaveLength(2);
+    expect(oneKg.quantity).toBe(3);
+    expect(twoKg.quantity).toBe(3);
+  });
+
+  it("still rejects a single request over the cap, sequentially", async () => {
+    const { user } = await createUser();
+    const cake = await createCake();
+
+    await expect(
+      cartService.addItem(user._id, addPayload(cake, 11))
+    ).rejects.toMatchObject({ statusCode: 400, message: /maximum quantity is 10/i });
+  });
+
+  it("still rejects a sequential add that would push an existing line over the cap", async () => {
+    const { user } = await createUser();
+    const cake = await createCake();
+
+    await cartService.addItem(user._id, addPayload(cake, 6));
+
+    await expect(
+      cartService.addItem(user._id, addPayload(cake, 6))
+    ).rejects.toMatchObject({ statusCode: 400, message: /maximum quantity is 10/i });
+
+    // And the rejected attempt must not have partially applied.
+    const cart = await Cart.findOne({ user: user._id });
+    expect(cart.items[0].quantity).toBe(6);
   });
 });
 
