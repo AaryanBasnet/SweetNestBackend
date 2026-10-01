@@ -12,6 +12,21 @@ const { processAndUploadFiles } = require('../middleware/uploadMiddleware');
 const { getPaginationOptions, buildPaginationMeta, getSortOptions } = require('../utils/pagination');
 const { getFlavorTags } = require('../utils/flavorDetector');
 
+/**
+ * Mongoose virtuals (basePrice, used by every card on the menu) are not
+ * computed on a .lean() result - lean() skips the document layer entirely,
+ * and Mongoose core never runs virtual getters against a plain object. Every
+ * cake list endpoint here uses .lean() for the read-performance win measured
+ * in PERFORMANCE_LOG.MD (Finding 1), so each one maps this over its results
+ * before responding. See Cake.computeBasePrice's own comment for why this
+ * lives on the model rather than being recomputed here by hand.
+ */
+const withBasePrice = (cakes) =>
+  cakes.map((cake) => ({
+    ...cake,
+    basePrice: Cake.computeBasePrice(cake.weightOptions),
+  }));
+
 // @desc    Get all cakes with filtering, sorting, pagination
 // @route   GET /api/cakes
 // @access  Public
@@ -109,7 +124,7 @@ const getCakes = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     message: 'Cakes fetched successfully',
-    data: cakes,
+    data: withBasePrice(cakes),
     pagination,
   });
 });
@@ -341,7 +356,7 @@ const getFeaturedCakes = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     message: 'Featured cakes fetched successfully',
-    data: cakes,
+    data: withBasePrice(cakes),
   });
 });
 
@@ -377,7 +392,7 @@ const getCakesByCategory = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     message: 'Cakes fetched successfully',
-    data: cakes,
+    data: withBasePrice(cakes),
     pagination,
   });
 });

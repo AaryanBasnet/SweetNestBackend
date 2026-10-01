@@ -230,12 +230,29 @@ const cakeSchema = new mongoose.Schema(
   }
 );
 
-// Virtual: basePrice - derived from minimum weight option price
-cakeSchema.virtual('basePrice').get(function () {
-  if (!this.weightOptions || this.weightOptions.length === 0) {
+/**
+ * The cheapest weight option's price - what a card shows as "Starting at".
+ *
+ * A plain function, not just a virtual, because several read endpoints use
+ * .lean() for performance (see the comment on getCakes in cakeController.js)
+ * and Mongoose virtuals do not run on a .lean() result - Mongoose core never
+ * applies them, lean({ virtuals: true }) is a no-op without the separate
+ * mongoose-lean-virtuals package, which this project does not have installed.
+ * Those controllers call Cake.computeBasePrice directly on the plain object
+ * instead. Keeping one function used by both the virtual and the lean path
+ * means the number can never drift between "fetch one cake" (not lean, uses
+ * the virtual) and "fetch a list of cakes" (lean, calls this directly).
+ */
+function computeBasePrice(weightOptions) {
+  if (!weightOptions || weightOptions.length === 0) {
     return 0;
   }
-  return Math.min(...this.weightOptions.map((opt) => opt.price));
+  return Math.min(...weightOptions.map((opt) => opt.price));
+}
+
+// Virtual: basePrice - derived from minimum weight option price
+cakeSchema.virtual('basePrice').get(function () {
+  return computeBasePrice(this.weightOptions);
 });
 
 // Virtual: defaultWeightOption - returns the default weight option
@@ -329,5 +346,7 @@ cakeSchema.index({ badges: 1 });
 cakeSchema.index({ name: 'text', description: 'text' });
 
 const Cake = mongoose.model('Cake', cakeSchema);
+
+Cake.computeBasePrice = computeBasePrice;
 
 module.exports = Cake;

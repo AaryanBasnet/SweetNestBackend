@@ -10,8 +10,9 @@
  *
  * USAGE:
  *   npm install --save-dev @faker-js/faker
- *   node scripts/seed.js            # seed data (additive)
- *   node scripts/seed.js --wipe     # wipe previously seeded data, then seed fresh
+ *   node scripts/seed.js              # seed data (additive)
+ *   node scripts/seed.js --wipe       # wipe previously seeded data, then seed fresh
+ *   node scripts/seed.js --wipe-only  # wipe previously seeded data and stop - no reseed
  *
  * Place this file in your backend project's `scripts/` folder (adjust the
  * require paths below if your model folder is named differently).
@@ -309,8 +310,14 @@ async function main() {
   await mongoose.connect(dbUrl);
   console.log('Connected.\n');
 
-  if (process.argv.includes('--wipe')) {
+  if (process.argv.includes('--wipe') || process.argv.includes('--wipe-only')) {
     await wipeSeedData();
+  }
+
+  if (process.argv.includes('--wipe-only')) {
+    console.log('Wipe-only: skipping reseed.');
+    await mongoose.disconnect();
+    process.exit(0);
   }
 
   const categories = await seedCategories();
