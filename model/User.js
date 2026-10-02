@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcrypt');
 
 // Address schema (embedded subdocument)
 const addressSchema = new mongoose.Schema(
