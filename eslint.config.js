@@ -65,4 +65,19 @@ module.exports = [
       },
     },
   },
+
+  // k6 runs scripts in its own JS runtime: ES modules, not CommonJS, with
+  // __ENV and __VU as globals instead of process.env.
+  {
+    files: ["scripts/k6/shopper-journey.js"],
+    languageOptions: {
+      sourceType: "module",
+      globals: {
+        console: "readonly",
+        __ENV: "readonly",
+        __VU: "readonly",
+        __ITER: "readonly",
+      },
+    },
+  },
 ];
