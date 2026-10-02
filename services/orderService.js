@@ -16,6 +16,7 @@ const logger = require("../config/logger");
 const { badRequest } = require("../utils/AppError");
 
 const LOCK_TIMEOUT_MS = 2 * 60 * 1000; // stale-lock fallback if a request crashes mid-checkout
+const MAX_ORDER_NUMBER_ATTEMPTS = 5;
 
 /**
  * Atomically claim the cart for checkout. Only one concurrent request for a
@@ -124,6 +125,36 @@ const buildOrderItems = (cartItems) =>
   );
 
 /**
+ * Create the Order document, retrying with a fresh order number if a
+ * duplicate-key collision happens on orderNumber specifically.
+ *
+ * generateOrderNumber no longer checks the database first (see
+ * model/Order.js for why) — this is where the rare actual collision is
+ * handled instead: let the unique index be the real source of truth, catch
+ * the specific error it produces, and retry. Any other error (validation
+ * failure, a different duplicate key, etc.) is rethrown immediately rather
+ * than retried, since retrying wouldn't fix it.
+ */
+const createOrderWithUniqueNumber = async (orderData) => {
+  for (let attempt = 0; attempt < MAX_ORDER_NUMBER_ATTEMPTS; attempt++) {
+    try {
+      return await Order.create({
+        ...orderData,
+        orderNumber: Order.generateOrderNumber(),
+      });
+    } catch (err) {
+      const isDuplicateOrderNumber =
+        err.code === 11000 && Object.keys(err.keyPattern || {}).includes("orderNumber");
+
+      if (!isDuplicateOrderNumber || attempt === MAX_ORDER_NUMBER_ATTEMPTS - 1) {
+        throw err;
+      }
+      // else: astronomically rare collision — loop again with a fresh number.
+    }
+  }
+};
+
+/**
  * Create an order from the user's current cart.
  *
  * Takes a user id and the delivery details the customer supplied. It never
@@ -160,8 +191,7 @@ const createOrderFromCart = async (userId, details) => {
       promoCode: cart.promoCode,
     });
 
-    const order = await Order.create({
-      orderNumber: await Order.generateOrderNumber(),
+    const order = await createOrderWithUniqueNumber({
       user: userId,
       items: buildOrderItems(cart.items),
       shippingAddress,
