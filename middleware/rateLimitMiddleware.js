@@ -18,7 +18,7 @@ const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 // outside production rather than disabling the middleware entirely (we still
 // want the code path exercised).
 const isProd = process.env.NODE_ENV === 'production';
-const scale = isProd ? 1 : 20;
+const scale = Number(process.env.RATE_LIMIT_SCALE) || (isProd ? 1 : 20);
 
 const jsonMessage = (message) => ({
   success: false,
