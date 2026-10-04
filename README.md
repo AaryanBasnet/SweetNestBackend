@@ -154,6 +154,22 @@ http://localhost:5000
 
 ---
 
+## 🧁 Sample Data & Demo Accounts
+
+| Command | What it does |
+|---------|--------------|
+| `npm run seed:catalog` | Adds the cake catalogue (idempotent, safe anywhere) |
+| `npm run seed:showcase` | Adds ~25 sample customers, two months of orders and verified-purchase reviews, so the dashboard, charts, ratings and order history have real-looking content |
+
+The showcase data lives on `sample.example.com`, a reserved domain, so it can never email a real person. Re-running replaces its own previous data and never touches real customers; `--wipe-only` removes it. Order dates are relative to the day it runs, so re-run it to keep the dashboard's "last 7 days" current. Running against `NODE_ENV=production` needs `--allow-production`.
+
+With `DEMO_ACCOUNTS_ENABLED=true`, the server also creates two public one-click demo accounts on start (used by the login page's demo buttons):
+
+- **Demo customer:** shops and checks out on the eSewa sandbox, but cannot edit the profile, reset the password or post public reviews. The showcase seed gives it an order history, including one order out for delivery.
+- **Demo admin:** sees every admin screen, but any change is refused server-side (`middleware/demoGuard.js`).
+
+---
+
 ## 🔌 API Overview
 
 Main API modules:

@@ -8,7 +8,9 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "seed:catalog": "node scripts/seedCatalog.js",
+    "seed:showcase": "node scripts/seedShowcase.js"
   },
   "keywords": [],
   "author": "",
