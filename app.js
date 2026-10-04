@@ -35,6 +35,7 @@ const newsletterRoutes = require("./routes/newsletterRoutes");
 const { errorHandler, notFound } = require("./middleware/errorMiddleware");
 const { apiLimiter } = require("./middleware/rateLimitMiddleware");
 const requestLogger = require("./middleware/requestLogger");
+const { AppError } = require("./utils/AppError");
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -89,7 +90,11 @@ const corsOptions = {
 
     if (allowedOrigins.includes(origin)) return callback(null, true);
 
-    return callback(new Error(`Origin ${origin} is not allowed by CORS`));
+    // A 403, not a plain Error: a plain Error became a 500, so every visit
+    // from an unlisted origin (e.g. the vercel.app copy of the site) was
+    // logged as a server fault and sent to Sentry. Refusing an origin is the
+    // policy working, not the server breaking.
+    return callback(new AppError(`Origin ${origin} is not allowed by CORS`, 403));
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
