@@ -105,9 +105,18 @@ const resetPasswordSchema = z.object({
   }),
 });
 
+const demoLoginSchema = z.object({
+  body: z.object({
+    role: z.enum(['customer', 'admin'], {
+      message: "Role must be 'customer' or 'admin'",
+    }),
+  }),
+});
+
 module.exports = {
   registerSchema,
   loginSchema,
+  demoLoginSchema,
   updateProfileSchema,
   forgotPasswordSchema,
   verifyResetCodeSchema,

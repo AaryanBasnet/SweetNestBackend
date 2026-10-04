@@ -12,6 +12,8 @@ const jwt = require('jsonwebtoken');
 const { processAndUploadSingleFile } = require('../middleware/uploadMiddleware');
 const { deleteImage } = require('../config/cloudinary');
 const logger = require('../config/logger');
+const { DEMO_ACCOUNTS, isDemoEnabled } = require('../config/demoAccounts');
+const { notFound } = require('../utils/AppError');
 
 // --- Helper: Generate JWT ---
 const generateToken = (id) => {
@@ -22,6 +24,23 @@ const generateToken = (id) => {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
 };
+
+// --- Helper: the body a successful sign-in returns (password or demo) ---
+const loginResponse = (user, message) => ({
+  success: true,
+  message,
+  token: generateToken(user._id),
+  userData: {
+    id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    phone: user.phone,
+    address: user.address,
+    avatar: user.avatar,
+    isDemo: Boolean(user.isDemo),
+  },
+});
 
 // @desc    Register User (Public registration - always creates 'user' role)
 // @route   POST /api/users/register
@@ -119,24 +138,25 @@ const loginUser = asyncHandler(async (req, res) => {
   const user = await User.findOne({ email }).select('+password');
 
   if (user && (await user.matchPassword(password))) {
-    res.status(200).json({
-      success: true,
-      message: 'User logged in successfully.',
-      token: generateToken(user._id),
-      userData: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        phone: user.phone,
-        address: user.address,
-        avatar: user.avatar,
-      },
-    });
+    res.status(200).json(loginResponse(user, 'User logged in successfully.'));
   } else {
     res.status(401);
     throw new Error('Invalid email or password');
   }
+});
+
+// @desc    Sign in to a public demo account in one click
+// @route   POST /api/users/demo-login   body: { role: 'customer' | 'admin' }
+// @access  Public, only when DEMO_ACCOUNTS_ENABLED=true
+const demoLogin = asyncHandler(async (req, res) => {
+  // 404 rather than 403 when off: the feature simply does not exist then.
+  if (!isDemoEnabled()) throw notFound('Demo accounts are not available.');
+
+  const { email } = DEMO_ACCOUNTS[req.body.role];
+  const user = await User.findOne({ email, isDemo: true });
+  if (!user) throw notFound('Demo accounts are not available.');
+
+  res.status(200).json(loginResponse(user, 'Signed in to the demo account.'));
 });
 
 // @desc    Get User Profile
@@ -157,6 +177,7 @@ const getUserProfile = asyncHandler(async (req, res) => {
         avatar: user.avatar,
         role: user.role,
         isVerified: user.isVerified,
+        isDemo: Boolean(user.isDemo),
       },
     });
   } else {
@@ -262,7 +283,8 @@ const forgotPassword = asyncHandler(async (req, res) => {
   // SECURITY: always answer the same way whether or not the account exists.
   // Returning 404 for unknown emails turned this endpoint into a user
   // enumeration oracle - an attacker could confirm which emails are registered.
-  if (user) {
+  // Demo accounts are public, so their password must never be reset.
+  if (user && !user.isDemo) {
     // Invalidate any code already outstanding for this user
     await PasswordResetToken.deleteMany({ userId: user._id });
 
@@ -469,6 +491,7 @@ module.exports = {
   registerUser,
   createAdmin,
   loginUser,
+  demoLogin,
   getUserProfile,
   updateUserProfile,
   forgotPassword,

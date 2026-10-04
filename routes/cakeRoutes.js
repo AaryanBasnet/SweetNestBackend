@@ -19,6 +19,7 @@ const {
 
 const { getCakeReviews, createReview } = require('../controller/reviewController');
 const { protect, admin } = require('../middleware/authMiddleware');
+const { blockDemo } = require('../middleware/demoGuard');
 const { uploadCakeImages, handleUploadError } = require('../middleware/uploadMiddleware');
 
 // 1. IMPORT MIDDLEWARE
@@ -46,7 +47,8 @@ router.get('/:slug', validate(getCakeBySlugSchema), getCakeBySlug);
 
 // Review routes
 router.get('/:cakeId/reviews', validate(getCakeReviewsSchema), getCakeReviews);
-router.post('/:cakeId/reviews', protect, validate(createReviewSchema), createReview);
+// Reviews are public, so the shared demo account cannot write them
+router.post('/:cakeId/reviews', protect, blockDemo('post reviews'), validate(createReviewSchema), createReview);
 
 // --- ADMIN ROUTES ---
 

@@ -27,6 +27,7 @@ const Cake = require('../model/Cake');
 const User = require('../model/User');
 const Order = require('../model/Order');
 const Review = require('../model/Review');
+const Cart = require('../model/Cart');
 
 const CONFIG = {
   categories: 8,
@@ -99,8 +100,19 @@ async function insertInBatches(Model, docs, label) {
 
 async function wipeSeedData() {
   console.log('Wiping previously seeded data...');
-  await Review.deleteMany({}); // all reviews are seed-generated in this workflow
+  // Only reviews written by load-test users. This used to be deleteMany({}),
+  // which also wiped every real and showcase review in the database.
+  const seedUsers = await User.find({ email: /@seedmail\.dev$/ }).select('_id');
+  const seedCakes = await Cake.find({ 'images.public_id': /^seed\// }).select('_id');
+  await Review.deleteMany({
+    $or: [
+      { user: { $in: seedUsers.map((u) => u._id) } },
+      { cake: { $in: seedCakes.map((c) => c._id) } },
+    ],
+  });
   await Order.deleteMany({ orderNumber: /^SN-SEED-/ });
+  // Carts the load-test users left behind (from the cart/coupon race tests)
+  await Cart.deleteMany({ user: { $in: seedUsers.map((u) => u._id) } });
   await Cake.deleteMany({ 'images.public_id': /^seed\// });
   await User.deleteMany({ email: /@seedmail\.dev$/ });
   console.log('Wipe complete.\n');
