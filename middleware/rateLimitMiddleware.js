@@ -98,6 +98,16 @@ const contactLimiter = rateLimit({
   ),
 });
 
+/** Newsletter sign-up: public, and each call can make Brevo send an email. */
+const newsletterLimiter = rateLimit({
+  ...baseOptions,
+  windowMs: 60 * 60 * 1000,
+  limit: 5 * scale,
+  message: jsonMessage(
+    'Too many sign-up attempts. Please try again later.'
+  ),
+});
+
 /** Cloudinary uploads cost money and CPU. */
 const uploadLimiter = rateLimit({
   ...baseOptions,
@@ -120,6 +130,7 @@ module.exports = {
   passwordResetRequestLimiter,
   passwordResetVerifyLimiter,
   contactLimiter,
+  newsletterLimiter,
   uploadLimiter,
   publicWriteLimiter,
 };

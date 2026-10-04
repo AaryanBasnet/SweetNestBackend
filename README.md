@@ -120,7 +120,15 @@ CLOUDINARY_API_SECRET=your_api_secret
 ESEWA_MERCHANT_ID=your_merchant_id
 ESEWA_SECRET_KEY=your_secret_key
 FRONTEND_URL=http://localhost:5173
+
+# Newsletter (Brevo). Optional double opt-in needs both DOI values.
+BREVO_API_KEY=your_brevo_api_key
+BREVO_LIST_ID=your_list_id
+BREVO_DOI_TEMPLATE_ID=
+BREVO_DOI_REDIRECT_URL=
 ```
+
+See `.env.example` for every variable with an explanation.
 
 ---
 

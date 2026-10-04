@@ -30,6 +30,7 @@ const analyticsRoutes = require("./routes/analyticsRoutes");
 const rewardsRoutes = require("./routes/rewardsRoutes");
 const promotionRoutes = require("./routes/promotionRoutes");
 const contactRoutes = require("./routes/contactRoutes");
+const newsletterRoutes = require("./routes/newsletterRoutes");
 
 const { errorHandler, notFound } = require("./middleware/errorMiddleware");
 const { apiLimiter } = require("./middleware/rateLimitMiddleware");
@@ -143,6 +144,7 @@ app.use("/api/analytics", analyticsRoutes);
 app.use("/api/rewards", rewardsRoutes);
 app.use("/api/promotions", promotionRoutes);
 app.use("/api/contact", contactRoutes);
+app.use("/api/newsletter", newsletterRoutes);
 
 // notFound: catches any request to a route that does not exist.
 // errorHandler: handles errors thrown anywhere in the stack above.
