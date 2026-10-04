@@ -1,6 +1,45 @@
 # 🍰 SweetNest Backend
 
-**SweetNest Backend** is the server-side application powering the SweetNest custom cake ordering platform. It provides secure authentication, business logic, data persistence, payments, notifications, and admin operations via a RESTful API.
+[![CI](https://github.com/AaryanBasnet/SweetNestBackend/actions/workflows/ci.yml/badge.svg)](https://github.com/AaryanBasnet/SweetNestBackend/actions/workflows/ci.yml)
+[![Uptime](https://github.com/AaryanBasnet/SweetNestBackend/actions/workflows/uptime.yml/badge.svg)](https://github.com/AaryanBasnet/SweetNestBackend/actions/workflows/uptime.yml)
+
+The REST API behind **[SweetNest](https://sweetnest.aaryanbasnet.com.np)**, a custom-cake bakery: catalogue, 3D-designed custom cakes, cart and checkout, eSewa payments, order tracking, loyalty points, reviews, newsletter and an admin dashboard.
+
+**Live API:** `https://api-sweetnest.aaryanbasnet.com.np` (health: [`/health`](https://api-sweetnest.aaryanbasnet.com.np/health), [`/ready`](https://api-sweetnest.aaryanbasnet.com.np/ready)) · Frontend: [SweetNestFrontend](https://github.com/AaryanBasnet/SweetNestFrontend)
+
+> **Try it:** the live site's login page has one-click demo accounts. The demo admin can open every admin screen, but `middleware/demoGuard.js` refuses every change server-side.
+
+### Architecture
+
+```mermaid
+flowchart LR
+  Browser["React SPA<br/>(Vercel)"] -->|HTTPS / JSON| API["Express 5 API<br/>(Render, behind Cloudflare)"]
+  API --> DB[("MongoDB")]
+  API -->|payments, sandbox| eSewa
+  API -->|images| Cloudinary
+  API -->|newsletter| Brevo
+  API -->|reset codes| Email["Email (SMTP)"]
+  API -.->|errors| Sentry
+  Uptime["GitHub Actions<br/>uptime check"] -.->|every 10 min| API
+```
+
+Routes → validation (Zod) → controllers → **services** (business rules, no HTTP) → Mongoose models. More on the layering in the Architecture section below.
+
+### Engineering highlights
+
+Each of these was found by testing, fixed, and verified with before and after numbers. The full write-ups are in [`PERFORMANCE_LOG.MD`](PERFORMANCE_LOG.MD).
+
+- **Checkout race condition.** 10 simultaneous checkouts with a single-use 20%-off coupon created **8 orders and gave away Rs 880** of discount. An atomic checkout lock on the cart (one `findOneAndUpdate`, claimed before any pricing runs) now lets exactly **1 order** through, and the other 9 get clean 400 responses.
+- **Cart race condition.** Concurrent "add to cart" requests produced duplicate lines and lost quantity updates. An atomic update brings 5 concurrent adds to **one line with quantity 5**.
+- **Payments settle exactly once.** eSewa callbacks mark an order paid through a single conditional update (`Order.markPaidOnce`), so a replayed or duplicated callback can't run side effects twice.
+- **Catalogue throughput.** Load-testing against 50,000 orders, 5,000 cakes and 20,000 reviews showed that read-only queries were building full Mongoose documents. Adding `.lean()` made them **44–52% faster (median)** with **78–102% more requests per second**.
+- **Security:**
+  - Password-reset codes are stored hashed, limited in attempts, and requested through an endpoint that can't be used to discover accounts.
+  - Changing a password revokes older JWTs.
+  - Every public write endpoint is rate limited.
+  - Errors never expose stack traces to clients in production.
+
+**Testing:** 251 tests run against a real MongoDB (in-memory locally, a service container in CI) on every push.
 
 This repository contains **only the backend codebase**. The frontend lives in a separate repository and consumes these APIs.
 
