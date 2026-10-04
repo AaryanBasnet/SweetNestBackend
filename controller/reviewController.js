@@ -7,6 +7,7 @@
 const asyncHandler = require('express-async-handler');
 const Review = require('../model/Review');
 const Cake = require('../model/Cake');
+const { getDemoScope } = require('../services/demoScope');
 const { getPaginationOptions, buildPaginationMeta } = require('../utils/pagination');
 
 // @desc    Get reviews for a cake
@@ -229,7 +230,9 @@ const getAllReviews = asyncHandler(async (req, res) => {
   const { page, limit, skip } = getPaginationOptions(req.query);
   const { approved, cakeId } = req.query;
 
-  const filter = {};
+  // The public demo admin only sees reviews by showcase customers
+  const scope = await getDemoScope(req);
+  const filter = { ...scope.reviews };
   if (approved === 'true') filter.isApproved = true;
   if (approved === 'false') filter.isApproved = false;
   if (cakeId) filter.cake = cakeId;

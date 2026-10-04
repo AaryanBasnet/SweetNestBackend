@@ -12,6 +12,7 @@ const {
 const { awardPoints } = require("./rewardsController");
 const orderService = require("../services/orderService");
 const logger = require("../config/logger");
+const { getDemoScope, canSeeUser } = require("../services/demoScope");
 
 // @desc    Create new order from cart
 // @route   POST /api/orders
@@ -73,11 +74,11 @@ const getOrderById = asyncHandler(async (req, res) => {
     throw new Error("Order not found");
   }
 
-  // Check if user owns this order (unless admin)
-  if (
-    order.user._id.toString() !== req.user._id.toString() &&
-    req.user.role !== "admin"
-  ) {
+  // Check if user owns this order (unless admin). The public demo admin may
+  // only open showcase orders, never a real customer's (services/demoScope.js).
+  const scope = await getDemoScope(req);
+  const adminCanSee = req.user.role === "admin" && canSeeUser(scope, order.user);
+  if (order.user._id.toString() !== req.user._id.toString() && !adminCanSee) {
     res.status(403);
     throw new Error("Not authorized to access this order");
   }
@@ -102,11 +103,11 @@ const getOrderByNumber = asyncHandler(async (req, res) => {
     throw new Error("Order not found");
   }
 
-  // Check if user owns this order (unless admin)
-  if (
-    order.user._id.toString() !== req.user._id.toString() &&
-    req.user.role !== "admin"
-  ) {
+  // Check if user owns this order (unless admin). The public demo admin may
+  // only open showcase orders, never a real customer's (services/demoScope.js).
+  const scope = await getDemoScope(req);
+  const adminCanSee = req.user.role === "admin" && canSeeUser(scope, order.user);
+  if (order.user._id.toString() !== req.user._id.toString() && !adminCanSee) {
     res.status(403);
     throw new Error("Not authorized to access this order");
   }
@@ -281,8 +282,9 @@ const getAllOrders = asyncHandler(async (req, res) => {
     sort,
   } = req.query;
 
-  // 1. Base Filter
-  const filter = {};
+  // 1. Base Filter (the public demo admin only sees showcase orders)
+  const scope = await getDemoScope(req);
+  const filter = { ...scope.orders };
 
   // 2. Add Status Filters
   if (status) filter.orderStatus = status;
@@ -330,7 +332,9 @@ const getAllOrders = asyncHandler(async (req, res) => {
 // @route   GET /api/orders/stats
 // @access  Private/Admin
 const getOrderStats = asyncHandler(async (req, res) => {
+  const scope = await getDemoScope(req);
   const stats = await Order.aggregate([
+    { $match: scope.orders },
     {
       $facet: {
         byStatus: [{ $group: { _id: "$orderStatus", count: { $sum: 1 } } }],

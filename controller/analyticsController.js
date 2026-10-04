@@ -7,6 +7,7 @@ const asyncHandler = require('express-async-handler');
 const Order = require('../model/Order');
 const User = require('../model/User');
 const Review = require('../model/Review');
+const { getDemoScope } = require('../services/demoScope');
 
 /**
  * @desc    Get overview analytics (main dashboard stats)
@@ -15,10 +16,12 @@ const Review = require('../model/Review');
  */
 const getOverviewAnalytics = asyncHandler(async (req, res) => {
   const { startDate, endDate } = req.query;
+  // The public demo admin only ever sees showcase data (services/demoScope.js)
+  const scope = await getDemoScope(req);
 
   // Date range setup - if no dates provided, get ALL data
-  let matchStage = {};
-  let previousMatchStage = {};
+  let matchStage = { ...scope.orders };
+  let previousMatchStage = { ...scope.orders };
 
   if (startDate && endDate) {
     const start = new Date(startDate);
@@ -124,7 +127,7 @@ const getOverviewAnalytics = asyncHandler(async (req, res) => {
   }
 
   // Customers
-  const totalCustomers = await User.countDocuments({ role: 'user' });
+  const totalCustomers = await User.countDocuments({ role: 'user', ...scope.users });
 
   let newCustomers = 0;
   let previousNewCustomers = 0;
@@ -137,11 +140,13 @@ const getOverviewAnalytics = asyncHandler(async (req, res) => {
 
     newCustomers = await User.countDocuments({
       role: 'user',
+      ...scope.users,
       createdAt: { $gte: start, $lte: end },
     });
 
     previousNewCustomers = await User.countDocuments({
       role: 'user',
+      ...scope.users,
       createdAt: { $gte: previousStart, $lt: start },
     });
   }
@@ -197,6 +202,7 @@ const getOverviewAnalytics = asyncHandler(async (req, res) => {
  */
 const getRevenueTrends = asyncHandler(async (req, res) => {
   const { period = 'daily', limit = 30 } = req.query;
+  const scope = await getDemoScope(req);
 
   let groupBy;
   let dateFormat;
@@ -244,6 +250,7 @@ const getRevenueTrends = asyncHandler(async (req, res) => {
       $match: {
         createdAt: { $gte: startDate },
         paymentStatus: 'paid',
+        ...scope.orders,
       },
     },
     {
@@ -285,8 +292,10 @@ const getRevenueTrends = asyncHandler(async (req, res) => {
 const getTopProducts = asyncHandler(async (req, res) => {
   const { limit = 10, startDate, endDate } = req.query;
 
+  const scope = await getDemoScope(req);
   const matchStage = {
     paymentStatus: 'paid',
+    ...scope.orders,
   };
 
   if (startDate && endDate) {
@@ -337,8 +346,10 @@ const getTopProducts = asyncHandler(async (req, res) => {
 const getCategoryPerformance = asyncHandler(async (req, res) => {
   const { startDate, endDate } = req.query;
 
+  const scope = await getDemoScope(req);
   const matchStage = {
     paymentStatus: 'paid',
+    ...scope.orders,
   };
 
   if (startDate && endDate) {
@@ -411,11 +422,14 @@ const getCategoryPerformance = asyncHandler(async (req, res) => {
  * @access  Private/Admin
  */
 const getCustomerAnalytics = asyncHandler(async (req, res) => {
+  const scope = await getDemoScope(req);
+
   // Total customers
-  const totalCustomers = await User.countDocuments({ role: 'user' });
+  const totalCustomers = await User.countDocuments({ role: 'user', ...scope.users });
 
   // Customers with orders (aggregation)
   const customerStats = await Order.aggregate([
+    { $match: scope.orders },
     {
       $group: {
         _id: '$user',
@@ -439,7 +453,7 @@ const getCustomerAnalytics = asyncHandler(async (req, res) => {
 
   // Top customers
   const topCustomers = await Order.aggregate([
-    { $match: { paymentStatus: 'paid' } },
+    { $match: { paymentStatus: 'paid', ...scope.orders } },
     {
       $group: {
         _id: '$user',
@@ -489,9 +503,11 @@ const getCustomerAnalytics = asyncHandler(async (req, res) => {
  * @access  Private/Admin
  */
 const getTimeTrends = asyncHandler(async (req, res) => {
+  const scope = await getDemoScope(req);
+
   // Best performing days of the week
   const dayPerformance = await Order.aggregate([
-    { $match: { paymentStatus: 'paid' } },
+    { $match: { paymentStatus: 'paid', ...scope.orders } },
     {
       $group: {
         _id: { $dayOfWeek: '$createdAt' },
@@ -532,6 +548,7 @@ const getTimeTrends = asyncHandler(async (req, res) => {
       $match: {
         paymentStatus: 'paid',
         createdAt: { $gte: twelveMonthsAgo },
+        ...scope.orders,
       },
     },
     {
@@ -595,7 +612,10 @@ const getTimeTrends = asyncHandler(async (req, res) => {
  * @access  Private/Admin
  */
 const getOrderStatusBreakdown = asyncHandler(async (req, res) => {
+  const scope = await getDemoScope(req);
+
   const statusBreakdown = await Order.aggregate([
+    { $match: scope.orders },
     {
       $group: {
         _id: '$orderStatus',
@@ -614,6 +634,7 @@ const getOrderStatusBreakdown = asyncHandler(async (req, res) => {
   ]);
 
   const paymentBreakdown = await Order.aggregate([
+    { $match: scope.orders },
     {
       $group: {
         _id: '$paymentMethod',
@@ -649,21 +670,22 @@ const getOrderStatusBreakdown = asyncHandler(async (req, res) => {
  */
 const getRecentActivity = asyncHandler(async (req, res) => {
   const { limit = 10 } = req.query;
+  const scope = await getDemoScope(req);
 
-  const recentOrders = await Order.find()
+  const recentOrders = await Order.find(scope.orders)
     .sort({ createdAt: -1 })
     .limit(parseInt(limit))
     .populate('user', 'name email')
     .select('orderNumber total orderStatus paymentStatus createdAt')
     .lean();
 
-  const recentCustomers = await User.find({ role: 'user' })
+  const recentCustomers = await User.find({ role: 'user', ...scope.users })
     .sort({ createdAt: -1 })
     .limit(parseInt(limit))
     .select('name email createdAt')
     .lean();
 
-  const pendingReviews = await Review.countDocuments({ isApproved: false });
+  const pendingReviews = await Review.countDocuments({ isApproved: false, ...scope.reviews });
 
   res.status(200).json({
     success: true,

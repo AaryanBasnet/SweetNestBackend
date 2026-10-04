@@ -14,6 +14,7 @@ const { deleteImage } = require('../config/cloudinary');
 const logger = require('../config/logger');
 const { DEMO_ACCOUNTS, isDemoEnabled } = require('../config/demoAccounts');
 const { notFound } = require('../utils/AppError');
+const { getDemoScope } = require('../services/demoScope');
 
 // --- Helper: Generate JWT ---
 const generateToken = (id) => {
@@ -405,8 +406,11 @@ const resetPassword = asyncHandler(async (req, res) => {
 const getAllCustomers = asyncHandler(async (req, res) => {
   const { search, sort = 'createdAt', order = 'desc', page = 1, limit = 10 } = req.query;
 
+  // The public demo admin only ever sees showcase customers (services/demoScope.js)
+  const scope = await getDemoScope(req);
+
   // --- PART 1: Table Data (Search & Pagination) ---
-  const matchStage = { role: 'user' };
+  const matchStage = { role: 'user', ...scope.users };
   if (search) {
     const searchRegex = { $regex: search, $options: 'i' };
     matchStage.$or = [{ name: searchRegex }, { email: searchRegex }];
@@ -442,7 +446,7 @@ const getAllCustomers = asyncHandler(async (req, res) => {
   // --- PART 2: Global Stats (For the top cards) ---
   // We calculate this separately so it doesn't change when you type in the search bar
   const statsPipeline = [
-    { $match: { role: 'user' } }, // Match ALL users
+    { $match: { role: 'user', ...scope.users } }, // All users (in the demo scope, if any)
     {
       $lookup: {
         from: 'orders',

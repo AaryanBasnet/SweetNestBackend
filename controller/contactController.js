@@ -5,6 +5,7 @@
 
 const asyncHandler = require('express-async-handler');
 const Contact = require('../model/Contact');
+const { getDemoScope } = require('../services/demoScope');
 
 // @desc    Submit contact form
 // @route   POST /api/contact
@@ -35,8 +36,10 @@ const submitContactForm = asyncHandler(async (req, res) => {
 // @access  Private/Admin
 const getAllContacts = asyncHandler(async (req, res) => {
   const { status, page = 1, limit = 20 } = req.query;
+  // Messages come from real visitors, so the public demo admin sees none
+  const scope = await getDemoScope(req);
 
-  const filter = {};
+  const filter = { ...scope.contacts };
   if (status) filter.status = status;
 
   const skip = (page - 1) * limit;
@@ -65,7 +68,10 @@ const getAllContacts = asyncHandler(async (req, res) => {
 // @route   GET /api/contact/:id
 // @access  Private/Admin
 const getContactById = asyncHandler(async (req, res) => {
-  const contact = await Contact.findById(req.params.id)
+  const scope = await getDemoScope(req);
+  // findOne with the scope (not findById) so a demo admin gets a 404 - and
+  // cannot mark a real message as read by opening it
+  const contact = await Contact.findOne({ _id: req.params.id, ...scope.contacts })
     .populate('user', 'name email')
     .populate('reply.repliedBy', 'name');
 
