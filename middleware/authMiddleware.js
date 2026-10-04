@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const asyncHandler = require('express-async-handler');
-const User = require('../model/User'); 
+const User = require('../model/User');
+const { blockDemoAdminWrites } = require('./demoGuard');
 
 // Protect routes (logged-in users only)
 const protect = asyncHandler(async (req, res, next) => {
@@ -47,10 +48,11 @@ const protect = asyncHandler(async (req, res, next) => {
   next();
 });
 
-// Admin-only middleware
+// Admin-only middleware. Every admin route passes through here, so this is
+// also where the public demo admin is held to read-only access.
 const admin = (req, res, next) => {
   if (req.user && req.user.role === 'admin') {
-    next();
+    blockDemoAdminWrites(req, res, next);
   } else {
     res.status(403);
     throw new Error('Not authorized as admin');

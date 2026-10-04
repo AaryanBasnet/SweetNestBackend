@@ -16,6 +16,7 @@ const {
 } = require('../controller/reviewController');
 
 const { protect, admin } = require('../middleware/authMiddleware');
+const { blockDemo } = require('../middleware/demoGuard');
 const { validate } = require('../middleware/validateMiddleware');
 const {
   updateReviewSchema,
@@ -28,12 +29,14 @@ const {
 // Public routes
 // Requires auth: an anonymous vote cannot be limited to one per person, which
 // made the previous version a free review-ranking lever for anyone.
-router.post('/:id/helpful', protect, validate(markHelpfulSchema), markReviewHelpful);
+router.post('/:id/helpful', protect, blockDemo('vote on reviews'), validate(markHelpfulSchema), markReviewHelpful);
 
 // Private routes (authenticated users)
+// Reviews are public, so the shared demo accounts cannot change them; the
+// demo admin in particular would otherwise be able to delete anyone's.
 router.get('/my-reviews', protect, getMyReviews);
-router.put('/:id', protect, validate(updateReviewSchema), updateReview);
-router.delete('/:id', protect, validate(deleteReviewSchema), deleteReview);
+router.put('/:id', protect, blockDemo('edit reviews'), validate(updateReviewSchema), updateReview);
+router.delete('/:id', protect, blockDemo('delete reviews'), validate(deleteReviewSchema), deleteReview);
 
 // Admin routes
 router.get('/admin/all', protect, admin, validate(getAllReviewsQuerySchema), getAllReviews);

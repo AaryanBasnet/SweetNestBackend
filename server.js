@@ -20,6 +20,7 @@ const app = require("./app");
 const logger = require("./config/logger");
 const connectDB = require("./config/db");
 const seedHeroCakes = require("./utils/seedHeroCakes");
+const seedDemoAccounts = require("./utils/seedDemoAccounts");
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -58,6 +59,7 @@ const start = async () => {
   try {
     await connectDB();
     await seedHeroCakes();
+    await seedDemoAccounts(); // no-op unless DEMO_ACCOUNTS_ENABLED=true
   } catch (error) {
     // Same reasoning as the config checks above: synchronous, because the
     // process is about to end.

@@ -184,10 +184,12 @@ const cancelOrder = asyncHandler(async (req, res) => {
     throw new Error("Order not found");
   }
 
-  // Check if user owns this order
+  // Check if user owns this order. The public demo admin is read-only, so it
+  // does not get the admin power to cancel other people's orders.
+  const canCancelAnyOrder = req.user.role === "admin" && !req.user.isDemo;
   if (
     order.user.toString() !== req.user._id.toString() &&
-    req.user.role !== "admin"
+    !canCancelAnyOrder
   ) {
     res.status(403);
     throw new Error("Not authorized to cancel this order");

@@ -122,6 +122,8 @@ const userSchema = new mongoose.Schema(
     address: { type: String, trim: true }, // DEPRECATED: Use addresses array instead
     avatar: { type: String }, // URL to Cloudinary/S3
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
+    // Public one-click demo account (see config/demoAccounts.js)
+    isDemo: { type: Boolean, default: false },
     // Set whenever the password changes. Tokens issued before this instant are
     // rejected by the auth middleware, which gives us a revocation story for
     // otherwise-stateless JWTs.

@@ -10,6 +10,7 @@ const {
   registerUser,
   createAdmin,
   loginUser,
+  demoLogin,
   getUserProfile,
   updateUserProfile,
   forgotPassword,
@@ -23,12 +24,15 @@ const {
   authLimiter,
   passwordResetRequestLimiter,
   passwordResetVerifyLimiter,
+  publicWriteLimiter,
 } = require("../middleware/rateLimitMiddleware");
+const { blockDemo } = require("../middleware/demoGuard");
 const { validate } = require("../middleware/validateMiddleware");
 const { uploadCakeImages } = require("../middleware/uploadMiddleware");
 const {
   registerSchema,
   loginSchema,
+  demoLoginSchema,
   updateProfileSchema,
   forgotPasswordSchema,
   verifyResetCodeSchema,
@@ -40,6 +44,8 @@ const {
 // password guessing, email bombing, and brute forcing the 6-digit reset code.
 router.post("/register", authLimiter, validate(registerSchema), registerUser);
 router.post("/login", authLimiter, validate(loginSchema), loginUser);
+// One-click public demo accounts (only when DEMO_ACCOUNTS_ENABLED=true)
+router.post("/demo-login", publicWriteLimiter, validate(demoLoginSchema), demoLogin);
 
 // Password reset routes (Public)
 router.post(
@@ -67,6 +73,7 @@ router
   .get(protect, getUserProfile)
   .put(
     protect,
+    blockDemo("edit the profile"),
     uploadCakeImages.single('avatar'),
     validate(updateProfileSchema),
     updateUserProfile
