@@ -17,6 +17,7 @@ const crypto = require("crypto");
 const Order = require("../model/Order");
 const Cart = require("../model/Cart");
 const logger = require("../config/logger");
+const { getDemoScope, canSeeUser } = require("../services/demoScope");
 
 /**
  * Which eSewa gateway to sign requests against.
@@ -444,10 +445,10 @@ const checkPaymentStatus = asyncHandler(async (req, res) => {
     throw new Error("Order not found");
   }
 
-  if (
-    order.user.toString() !== req.user._id.toString() &&
-    req.user.role !== "admin"
-  ) {
+  // The public demo admin may not check a real customer's order
+  const scope = await getDemoScope(req);
+  const adminCanSee = req.user.role === "admin" && canSeeUser(scope, order.user);
+  if (order.user.toString() !== req.user._id.toString() && !adminCanSee) {
     res.status(403);
     throw new Error("Not authorized to check this order");
   }

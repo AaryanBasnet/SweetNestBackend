@@ -41,10 +41,13 @@ const User = require('../model/User');
 const Cake = require('../model/Cake');
 const Order = require('../model/Order');
 const Review = require('../model/Review');
-const { DEMO_ACCOUNTS } = require('../config/demoAccounts');
+const {
+  DEMO_ACCOUNTS,
+  SAMPLE_EMAIL_DOMAIN: SAMPLE_DOMAIN,
+  SAMPLE_EMAIL_PATTERN,
+} = require('../config/demoAccounts');
 const { calculatePointsEarned } = require('../config/rewards');
 
-const SAMPLE_DOMAIN = 'sample.example.com';
 const DAYS_OF_HISTORY = 60;
 const SHIPPING = 100;
 const DAY = 24 * 60 * 60 * 1000;
@@ -220,7 +223,7 @@ const ensureSafeToRun = () => {
 };
 
 const wipe = async () => {
-  const sampleUsers = await User.find({ email: new RegExp(`@${SAMPLE_DOMAIN.replace(/\./g, '\\.')}$`) }).select('_id');
+  const sampleUsers = await User.find({ email: SAMPLE_EMAIL_PATTERN }).select('_id');
   const sampleIds = sampleUsers.map((u) => u._id);
   const demo = await User.findOne({ email: DEMO_ACCOUNTS.customer.email, isDemo: true }).select('_id');
   const orderOwners = demo ? [...sampleIds, demo._id] : sampleIds;
