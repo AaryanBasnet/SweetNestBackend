@@ -4,6 +4,7 @@
  */
 
 const { z } = require('zod');
+const { TIME_SLOTS, checkDeliverySchedule } = require('../utils/deliverySchedule');
 
 // Shipping address schema
 const shippingAddressSchema = z.object({
@@ -43,9 +44,17 @@ const deliveryScheduleSchema = z.object({
     .refine((val) => !isNaN(Date.parse(val)), {
       message: 'Invalid delivery date',
     }),
-  timeSlot: z.enum(['09:00 AM - 12:00 PM', '12:00 PM - 03:00 PM', '03:00 PM - 06:00 PM'], {
+  timeSlot: z.enum(TIME_SLOTS, {
     required_error: 'Please select a delivery time slot',
   }),
+}).superRefine((schedule, ctx) => {
+  // Only once the date and slot are individually valid
+  if (isNaN(Date.parse(schedule.date))) return;
+
+  const problem = checkDeliverySchedule(schedule.date, schedule.timeSlot);
+  if (problem) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem, path: ['date'] });
+  }
 });
 
 // Create order schema

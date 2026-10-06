@@ -13,6 +13,7 @@ const { awardPoints } = require("./rewardsController");
 const orderService = require("../services/orderService");
 const logger = require("../config/logger");
 const { getDemoScope, canSeeUser } = require("../services/demoScope");
+const newsletterService = require("../services/newsletterService");
 
 // @desc    Create new order from cart
 // @route   POST /api/orders
@@ -22,6 +23,19 @@ const createOrder = asyncHandler(async (req, res) => {
   // and shape the reply. Every rule about what an order costs and what
   // happens to the cart and the coupon lives in orderService.
   const order = await orderService.createOrderFromCart(req.user._id, req.body);
+
+  // The "keep me updated" tick box at checkout. Signing up must never get in
+  // the way of the order, so it runs on the side and only logs a failure. The
+  // public demo accounts are left out so the sample shop cannot fill the real
+  // mailing list.
+  if (order.subscribeNewsletter && !req.user.isDemo) {
+    newsletterService.subscribe(order.contactEmail).catch((err) => {
+      logger.warn(
+        { err: err.message, orderId: order._id },
+        "Checkout newsletter sign-up failed"
+      );
+    });
+  }
 
   res.status(201).json({
     success: true,
