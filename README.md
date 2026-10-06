@@ -39,7 +39,7 @@ Each of these was found by testing, fixed, and verified with before and after nu
   - Every public write endpoint is rate limited.
   - Errors never expose stack traces to clients in production.
 
-**Testing:** 251 tests run against a real MongoDB (in-memory locally, a service container in CI) on every push.
+**Testing:** 273 tests run against a real MongoDB (in-memory locally, a service container in CI) on every push.
 
 This repository contains **only the backend codebase**. The frontend lives in a separate repository and consumes these APIs.
 
@@ -313,6 +313,45 @@ every total in the codebase.
   which a standalone `mongod` cannot provide.
 * **Some controllers are still thick.** Analytics, notifications and
   promotions have not been through this treatment yet.
+
+---
+
+## 🧭 Design decisions
+
+Why the API is built the way it is. The layering and money rules are above; these cover the rest.
+
+### The public demo admin is read-only *and* sees no real customers
+
+Anyone can click "Admin demo", so a demo admin has to be safe to hand to the whole internet. That took three separate layers, each enforced on the server, because hiding a button in the UI protects nothing:
+
+| Layer | Where | What it stops |
+| --- | --- | --- |
+| Read-only | `middleware/demoGuard.js`, wired into the `admin` middleware | Any non-GET request from the demo admin, on every admin route, including ones added later |
+| Blocked actions | `blockDemo(...)` on single routes | The demo customer editing the profile, resetting the password or posting public reviews |
+| Data scope | `services/demoScope.js` | The demo admin reading a real customer's name, email, orders, reviews or messages |
+
+The third layer exists because read-only is not the same as private. The first version of the demo could not change anything, but it could still *read* every real order. Scoping is applied inside each admin read (customers, all eight analytics endpoints, orders and stats, order lookups by id and number, payment status, reviews, contact messages), so a demo admin only ever sees the showcase customers (`sample.example.com`) and the demo accounts. Opening a real contact message as the demo admin returns 404 rather than 403, and does not mark the message as read.
+
+`tests/demoAdminPrivacy.test.js` calls every admin read as the demo admin and fails if a real customer's name, email or order number appears anywhere in the response. Eleven of its 18 tests fail on the code from before the scoping was added. A control test checks that real admins still see everything.
+
+### Failing safely
+
+- **Demo accounts are off unless asked for.** They are only created when `DEMO_ACCOUNTS_ENABLED=true`, and their password reset is skipped.
+- **Optional services stay optional.** With no `SENTRY_DSN` the SDK is never loaded. A missing Brevo key makes the newsletter answer `503` instead of crashing the app.
+- **Errors are classified, not just caught.** A request from an origin that is not on the CORS list is refused with a `403`, not allowed to surface as a `500`. That one mistake had turned ordinary stray requests into Sentry noise (`tests/cors.test.js`).
+- **Only server faults are reported.** 4xx responses are never sent to Sentry, because wrong passwords and validation failures would bury real defects.
+
+### Abuse limits
+
+Every public write endpoint has its own limiter (login, password reset request and verify, contact, newsletter, uploads), with a broad ceiling on the whole API behind them. `trust proxy` is set to `1` for Render and Cloudflare so the limits count real client addresses, not the proxy's. The newsletter form also carries a honeypot field, so a bot that fills it gets a success response and nothing is stored.
+
+### Tests run against a real database
+
+The suite uses a real MongoDB (in-memory locally, a service container in CI) instead of mocking Mongoose. The race conditions and exactly-once payment behaviour described above can only be reproduced against a real database, and mocks would have passed straight through them.
+
+### Operations
+
+`/health` answers instantly and `/ready` checks the database. A GitHub Actions workflow hits both, plus the frontend, every 10 minutes. Logs are structured (pino) with request ids. A dependency audit fails CI on any high or critical advisory, and in practice it removed `nodemon` from the project: its dependency tree had no patched version, so development uses `node --watch` instead.
 
 ---
 
