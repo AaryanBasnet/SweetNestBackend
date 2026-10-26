@@ -15,7 +15,7 @@
 
 # Pinned to a minor version, not just "22" or "latest": a reproducible build is
 # one where the same commit produces the same image next month.
-ARG NODE_VERSION=22.14-alpine
+ARG NODE_VERSION=22.23.4-alpine
 
 
 # --- Dependencies ------------------------------------------------------------
