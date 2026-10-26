@@ -5,8 +5,9 @@
 
 const { z } = require('zod');
 
-// Base address data schema (reusable)
-const addressDataSchema = z.object({
+// The address fields on their own. zod 4.6 refuses .partial() on a schema that has a refinement, so the
+// cross-field rule below is applied after .partial() for updates instead of being part of the base object.
+const addressFields = z.object({
   label: z.enum(['Home', 'Office', 'Other', 'Custom'], {
     required_error: 'Address label is required',
   }),
@@ -53,19 +54,22 @@ const addressDataSchema = z.object({
     .min(10, 'Phone must be at least 10 digits')
     .max(20, 'Phone must be at most 20 characters')
     .trim(),
-}).refine(
-  (data) => {
-    // If label is 'Custom', customLabel is required and not empty
-    if (data.label === 'Custom') {
-      return data.customLabel && data.customLabel.trim().length > 0;
-    }
-    return true;
-  },
-  {
-    message: 'Custom label is required when label type is Custom',
-    path: ['customLabel'],
+});
+
+// If label is 'Custom', customLabel is required and not empty (an update that does not send a label is not checked)
+const customLabelRule = (data) => {
+  if (data.label === 'Custom') {
+    return Boolean(data.customLabel && data.customLabel.trim().length > 0);
   }
-);
+  return true;
+};
+const customLabelMessage = {
+  message: 'Custom label is required when label type is Custom',
+  path: ['customLabel'],
+};
+
+// Base address data schema (reusable)
+const addressDataSchema = addressFields.refine(customLabelRule, customLabelMessage);
 
 // Create address schema
 const createAddressSchema = z.object({
@@ -77,7 +81,7 @@ const updateAddressSchema = z.object({
   params: z.object({
     id: z.string({ required_error: 'Address ID is required' }),
   }),
-  body: addressDataSchema.partial(),
+  body: addressFields.partial().refine(customLabelRule, customLabelMessage),
 });
 
 // Delete address schema
