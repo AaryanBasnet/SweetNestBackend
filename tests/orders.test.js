@@ -354,3 +354,47 @@ describe("order status transitions", () => {
     expect((await Order.findById(order._id)).orderStatus).toBe("pending");
   });
 });
+
+describe("order numbers", () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it("are SN- plus 8 hex characters, made without a database call", () => {
+    const seen = new Set();
+    for (let i = 0; i < 2000; i += 1) {
+      const number = Order.generateOrderNumber();
+      expect(number).toMatch(/^SN-[0-9A-F]{8}$/);
+      seen.add(number);
+    }
+    expect(seen.size).toBe(2000);
+  });
+
+  it("an order still goes through when the first number happens to be taken (the unique index decides, then it retries)", async () => {
+    const { user, token } = await createUser();
+    const cake = await createCake();
+    await createCartWithItem(user._id, cake, 1);
+
+    const realCreate = Order.create.bind(Order);
+    const collision = Object.assign(new Error("E11000 duplicate key"), { code: 11000, keyPattern: { orderNumber: 1 } });
+    const create = jest.spyOn(Order, "create").mockRejectedValueOnce(collision).mockImplementation(realCreate);
+
+    const res = await placeOrder(token);
+
+    expect(res.status).toBe(201);
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[0][0].orderNumber).not.toBe(create.mock.calls[1][0].orderNumber);
+  });
+
+  it("any other error is not retried", async () => {
+    const { user, token } = await createUser();
+    const cake = await createCake();
+    await createCartWithItem(user._id, cake, 1);
+
+    const other = Object.assign(new Error("E11000 duplicate key"), { code: 11000, keyPattern: { user: 1 } });
+    const create = jest.spyOn(Order, "create").mockRejectedValue(other);
+
+    const res = await placeOrder(token);
+
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+});
