@@ -218,3 +218,52 @@ sequential max-quantity tests the first draft had broken.
 
 **Files changed:** services/cartService.js (getOrCreateCart,
 incrementExistingLine, findMatchingLine, pushNewLineIfAbsent, addItem)
+
+
+
+## Finding 6: Order number generation — degrading performance + latent cross-user race
+
+**Status: CONFIRMED BUG, FIXED, VERIFIED**
+
+**Method:** scripts/load-test-order-creation.js — N concurrent "lanes"
+(separate users/carts) continuously creating orders for a fixed duration,
+avoiding the checkout lock (Finding 4) as an artificial bottleneck.
+
+**Bug found:** Order.generateOrderNumber used a 4-digit random number
+(9,000 possible values) with a check-then-use pattern: pick a random
+number, query the DB to see if it's taken, loop if so. At 1,867 orders
+created (21% of the space used), p99 latency was 757ms vs a 149ms median
+— collisions became increasingly likely as the pool filled, each one
+costing an extra DB round trip. The same check-then-use shape also had a
+latent cross-user race (same class as Findings 4 and 5): two different
+customers could generate the same number, both see it as unused, and
+both attempt to create an order with it — the unique index would
+correctly reject the second, but nothing caught that, surfacing as an
+unhandled 500.
+
+**Fix:** model/Order.js — generateOrderNumber no longer checks the
+database; uses an 8-hex-character random suffix (~4.3 billion values,
+same pattern already used for Cake/Category slugs), synchronous, no DB
+call. services/orderService.js — createOrderWithUniqueNumber wraps the
+actual Order.create() call in a retry loop that catches a duplicate-key
+error on orderNumber specifically and retries with a fresh number,
+letting the unique index be the actual enforcement rather than a
+pre-check in application code.
+
+**Verified (same load test, 20 lanes, 15s, before vs after):**
+
+| | Before | After |
+|---|---|---|
+| Effective req/sec | 124.5 | 142.6 |
+| Median latency | 149 ms | 131 ms |
+| p99 latency | 757 ms | 349 ms (-54%) |
+| Max latency | 918 ms | 434 ms (-53%) |
+
+Median/p95 barely moved (most individual requests were already fast);
+p99/max specifically collapsed, consistent with removing a cost that
+only hit an increasing share of requests as the number pool filled,
+rather than a flat per-request cost.
+
+**Files changed:** model/Order.js (generateOrderNumber), 
+services/orderService.js (createOrderWithUniqueNumber, 
+createOrderFromCart)
