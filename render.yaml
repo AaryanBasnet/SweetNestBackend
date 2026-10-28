@@ -1,0 +1,66 @@
+# Render Blueprint: the API service described as code. In the Render dashboard choose
+# New > Blueprint and point it at this repository; Render reads this file and creates
+# the service, instead of someone clicking the settings together by hand.
+#
+# It runs the Docker image from the Dockerfile in this repository (the "runtime" stage),
+# so production runs the very image that CI built, scanned and smoke-tested.
+#
+# Values marked "sync: false" are secrets. They are not stored in this file, so Render
+# asks for each one when the Blueprint is first applied.
+
+services:
+  - type: web
+    name: sweetnest-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    region: singapore
+    plan: free
+    autoDeploy: true # a new deploy on every push to the branch the service tracks
+
+    # Render marks the service healthy when this returns 200. /ready also checks the
+    # database, so a deploy whose database connection is broken never receives traffic.
+    healthCheckPath: /ready
+
+    envVars:
+      # Render sets PORT itself and the server reads it. NODE_ENV=production comes from the image.
+      - key: FRONTEND_URL
+        value: https://sweetnest.aaryanbasnet.com.np
+      - key: BACKEND_URL
+        value: https://api-sweetnest.aaryanbasnet.com.np
+      - key: DB_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: RESET_CODE_SECRET
+        sync: false
+      - key: ESEWA_ENV
+        sync: false
+      - key: ESEWA_MERCHANT_ID
+        sync: false
+      - key: ESEWA_SECRET_KEY
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_APP_PASSWORD
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_LIST_ID
+        sync: false
+      - key: BREVO_DOI_TEMPLATE_ID
+        sync: false
+      - key: BREVO_DOI_REDIRECT_URL
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: CORS_EXTRA_ORIGINS
+        sync: false
+      - key: DEMO_ACCOUNTS_ENABLED
+        sync: false

@@ -460,6 +460,19 @@ docker compose down          # stop, keeping the database
 docker compose down -v       # stop and wipe the database volume
 ```
 
+Three ways to run it:
+
+| You want | Command |
+| --- | --- |
+| The API and MongoDB, built from this folder | `docker compose up --build` |
+| To develop with automatic restarts | `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build --watch` |
+| The whole app (database, API, website) with nothing to build | `docker compose -f docker-compose.fullstack.yml up`, then open http://localhost:8080 |
+
+Docker is used end to end, not only locally: CI builds the image, scans it for
+vulnerabilities (Trivy) and publishes it to the GitHub Container Registry
+(`ghcr.io/aaryanbasnet/sweetnest-api`), Dependabot proposes base-image updates,
+and production on Render runs the same image (`render.yaml`).
+
 A few decisions worth knowing about:
 
 * **Multi-stage build.** Dependencies install in their own stage keyed on

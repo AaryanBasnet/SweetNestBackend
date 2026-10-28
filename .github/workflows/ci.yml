@@ -119,6 +119,17 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # The development stage (used by docker-compose.dev.yml) has to keep building too,
+      # even though nothing in CI runs it.
+      - name: Build the development stage
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: dev
+          push: false
+          tags: sweetnest-api:dev-ci
+          cache-from: type=gha
+
       # Brings up the real compose stack, which exercises the compose file as
       # well as the image: service networking, the healthcheck, and the
       # depends_on condition that makes the API wait for Mongo.

@@ -13,3 +13,10 @@ tests
 Dockerfile
 .dockerignore
 docker-compose*.yml
+
+# Not needed to run the API
+docs
+render.yaml
+PERFORMANCE_LOG.MD
+eslint.config.js
+jest.config.js
