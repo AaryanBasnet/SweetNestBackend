@@ -68,6 +68,14 @@ FROM node:22.23.4-alpine AS runtime
 # graceful shutdown in server.js mid-request.
 RUN apk add --no-cache dumb-init
 
+# The image that RUNS the API does not need npm, yarn or corepack: dependencies were installed in the
+# "deps" stage and the command is plain "node server.js". Removing them makes the image smaller and, more
+# to the point, removes a pile of code nothing uses. The vulnerability scan flagged 10 HIGH findings, and
+# every one was in npm's own bundled packages, not in this app.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+           /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-*
+
 ENV NODE_ENV=production
 ENV PORT=5000
 

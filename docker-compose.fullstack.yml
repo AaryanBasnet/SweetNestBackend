@@ -9,7 +9,7 @@
 #
 # Then open http://localhost:8080. Fill the shop with sample cakes:
 #
-#   docker compose -f docker-compose.fullstack.yml exec api npm run seed:showcase
+#   docker compose -f docker-compose.fullstack.yml exec api node scripts/seedShowcase.js --allow-production
 #
 # This is for trying the app locally. The website image was built to call the API
 # at http://localhost:5000/api, so the ports below must stay as they are.
