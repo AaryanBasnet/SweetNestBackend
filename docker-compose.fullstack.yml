@@ -1,0 +1,63 @@
+# =============================================================================
+# The whole SweetNest app on your machine, with nothing to build or install:
+#
+#   docker compose -f docker-compose.fullstack.yml up
+#
+# It pulls the images CI publishes to the GitHub Container Registry:
+#   ghcr.io/aaryanbasnet/sweetnest-api   the API (this repository)
+#   ghcr.io/aaryanbasnet/sweetnest-web   the website (SweetNestFrontend)
+#
+# Then open http://localhost:8080. Fill the shop with sample cakes:
+#
+#   docker compose -f docker-compose.fullstack.yml exec api node scripts/seedShowcase.js --allow-production
+#
+# This is for trying the app locally. The website image was built to call the API
+# at http://localhost:5000/api, so the ports below must stay as they are.
+# =============================================================================
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1})"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  api:
+    image: ghcr.io/aaryanbasnet/sweetnest-api:${API_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DB_URL: mongodb://mongo:27017/SweetNestDatabase
+      # Local trial only. Change it if you ever expose this stack to a network.
+      JWT_SECRET: ${JWT_SECRET:-local-trial-secret-change-me-before-sharing}
+      FRONTEND_URL: http://localhost:8080
+      BACKEND_URL: http://localhost:5000
+      ESEWA_ENV: sandbox
+      ESEWA_MERCHANT_ID: EPAYTEST
+      # The container runs in production mode, which insists on a payment key. This
+      # placeholder lets it boot; eSewa will not accept it, so checkout is a demo here.
+      ESEWA_SECRET_KEY: ${ESEWA_SECRET_KEY:-local-trial-placeholder}
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  web:
+    image: ghcr.io/aaryanbasnet/sweetnest-web:${WEB_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  mongo-data:

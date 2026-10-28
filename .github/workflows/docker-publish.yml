@@ -1,0 +1,108 @@
+name: Docker image
+
+# Builds the API image, scans it for known vulnerabilities, and (on main and on
+# version tags only) publishes it to the GitHub Container Registry:
+#
+#   ghcr.io/aaryanbasnet/sweetnest-api:latest        the newest main
+#   ghcr.io/aaryanbasnet/sweetnest-api:sha-<commit>  one specific commit
+#   ghcr.io/aaryanbasnet/sweetnest-api:1.2.3         a release (tag v1.2.3)
+#
+# On a pull request it does everything except publish, so a broken Dockerfile or a
+# vulnerable base image is found before it is merged.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - package.json
+      - package-lock.json
+      - .github/workflows/docker-publish.yml
+  workflow_dispatch:
+
+concurrency:
+  group: docker-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    name: Build, scan and publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # lets the built-in token push to ghcr.io; nothing else
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Image names must be lowercase, and the owner "AaryanBasnet" is not.
+      - name: Work out the image name
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sweetnest-api" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Logging in is only needed to push, so pull requests skip it (they also
+      # cannot be given write access to the registry).
+      - name: Log in to the registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Works out the tags and the standard image labels from the git event.
+      - name: Tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      # Build once into the local Docker, so the scanner looks at the exact image
+      # that would be published. The registry cache makes the second build below
+      # almost instant.
+      - name: Build (for the scan)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: sweetnest-api:scan
+          build-args: GIT_SHA=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Fails the run on a HIGH or CRITICAL vulnerability that has a fix available
+      # (a vulnerability with no fix yet is not something we can act on).
+      - name: Scan for vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: sweetnest-api:scan
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Publish
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: GIT_SHA=${{ github.sha }}
+          cache-from: type=gha
+          # Proof of how the image was built, and a list of what is inside it
+          provenance: true
+          sbom: true
