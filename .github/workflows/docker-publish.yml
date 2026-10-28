@@ -39,7 +39,7 @@ jobs:
       packages: write # lets the built-in token push to ghcr.io; nothing else
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Image names must be lowercase, and the owner "AaryanBasnet" is not.
       - name: Work out the image name
