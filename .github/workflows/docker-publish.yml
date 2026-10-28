@@ -73,7 +73,7 @@ jobs:
       # that would be published. The registry cache makes the second build below
       # almost instant.
       - name: Build (for the scan)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           load: true
@@ -95,7 +95,7 @@ jobs:
 
       - name: Publish
         if: github.event_name != 'pull_request'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true

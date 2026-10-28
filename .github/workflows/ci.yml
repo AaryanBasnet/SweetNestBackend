@@ -110,7 +110,7 @@ jobs:
       # Builds the image but pushes nowhere. A Dockerfile that no longer
       # builds is something to learn about on a pull request, not halfway
       # through a deploy.
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           push: false
@@ -122,7 +122,7 @@ jobs:
       # The development stage (used by docker-compose.dev.yml) has to keep building too,
       # even though nothing in CI runs it.
       - name: Build the development stage
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: dev
