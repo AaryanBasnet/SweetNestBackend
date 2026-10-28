@@ -21,7 +21,7 @@
 
 
 # --- 1. Production dependencies ----------------------------------------------
-FROM node:22.23.4-alpine AS deps
+FROM node:26.12.1-alpine AS deps
 
 WORKDIR /app
 
@@ -42,7 +42,7 @@ RUN --mount=type=cache,target=/root/.npm \
 # Used by docker-compose.dev.yml. Has the dev dependencies and runs the app with
 # "node --watch", which restarts when a file changes. "docker compose watch" copies
 # every file you save into the running container (see docker-compose.dev.yml).
-FROM node:22.23.4-alpine AS dev
+FROM node:26.12.1-alpine AS dev
 
 ENV NODE_ENV=development
 ENV PORT=5000
@@ -60,7 +60,7 @@ CMD ["npm", "run", "dev"]
 
 
 # --- 3. Production runtime (the default target) ------------------------------
-FROM node:22.23.4-alpine AS runtime
+FROM node:26.12.1-alpine AS runtime
 
 # dumb-init becomes PID 1 and forwards signals properly. Without it Node runs
 # as PID 1, where it does not get default signal handlers - so `docker stop`
