@@ -15,7 +15,7 @@
 
 services:
   mongo:
-    image: mongo:7
+    image: mongo:9
     restart: unless-stopped
     # No "ports:" here on purpose. The API reaches the database over the private
     # compose network by the name "mongo", so nothing on your machine's network
